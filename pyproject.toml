@@ -1,0 +1,11 @@
+[project]
+name = "credit-cards-spendings-analysiser"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "google-genai>=1.56.0",
+    "pdf2image>=1.17.0",
+    "pillow>=12.0.0",
+]
