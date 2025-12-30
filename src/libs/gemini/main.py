@@ -1,4 +1,7 @@
 from google import genai as new_genai
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+from libs.prompts.main import STATEMENT_READER_INSTUCTIONS
 
 
 def init_gemini_client(api_key):
@@ -11,7 +14,7 @@ def init_gemini_client(api_key):
         return None
 
 
-def read_images(gemini_client, image_paths):
+def read_images(gemini_client, gemini_model, image_paths):
 
     upload_files = []
 
@@ -21,17 +24,16 @@ def read_images(gemini_client, image_paths):
     # Create the prompt with text and multiple images
     response = gemini_client.models.generate_content(
 
-        model="gemini-3-flash-preview",
-        contents=[
-            """
-            Analyze the credit card statments, list out all the transactions with date, merchant and amount. Payment credits can be ignored.
-            Some statments may incluing the original currency and amount, but please always use the HKD column for analysis.
-            Some statments may use more than 1 lines for a single transaction, please make sure to capture all lines for each transaction.
-            Put all credit card transactions in a table format with columns Date, Merchant, Amount, Card and Category.
-            Category should be one of the following: Dining, Entertainment, Travel, Cloud, Utilities, Health, Shopping, Fuel, Insurance, Telecom, Others.
-            For HSBC credit cards, since the statment may be hard to read, please make sure to capture all transactions, you may sum up the total spending and cross check with the statment total to ensure all transactions are captured.
-            """,
-        ] + upload_files
+        model=gemini_model,
+        contents=[STATEMENT_READER_INSTUCTIONS] + upload_files
     )
 
     return response.text
+
+
+def init_langchain_model(api_key: str, model: str):
+    """Initialize the LLM for classification"""
+    return ChatGoogleGenerativeAI(
+        api_key=api_key,
+        model=model
+    )
