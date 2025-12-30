@@ -56,15 +56,47 @@ Or using pip:
 pip install -r pyproject.toml
 ```
 
-## Configuration
+## Docker Deployment
 
-Set your Gemini API key as an environment variable:
+### Build and Run with Docker
 
+1. **Build the Docker image:**
 ```bash
-export GEMINI_API_KEY="your-api-key-here"
+docker build -t credit-card-analyzer .
 ```
 
-## Usage
+2. **Run the container:**
+```bash
+docker run -p 8501:8501 \
+  -e GEMINI_API_KEY="your-api-key-here" \
+  credit-card-analyzer
+```
+
+3. **Access the app:**
+Open your browser to `http://localhost:8501`
+
+### Docker Compose (Recommended)
+
+Create a `docker-compose.yml` file:
+
+```yaml
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    restart: unless-stopped
+```
+
+Then run:
+```bash
+docker-compose up -d
+```
+
+## Local Development
 
 1. Place your PDF credit card statements in the `statements/` directory:
 ```
