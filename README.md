@@ -32,6 +32,7 @@ The analyzer automatically categorizes transactions into:
 - Python >= 3.12
 - Google Gemini API Key
 - PDF credit card statements
+- Surfshark (or compatible) OpenVPN account and configuration files (see below)
 
 ## Installation
 
@@ -46,17 +47,27 @@ cd Credit-Cards-Spendings-Analysiser
 sudo apt-get install poppler-utils
 ```
 
-3. Install Python dependencies using `uv`:
+3. Install Python dependencies using `uv` (recommended):
 ```bash
 uv sync
 ```
 
-Or using pip:
+Or using pip (not recommended for this project):
 ```bash
 pip install -r pyproject.toml
 ```
 
 ## Docker Deployment
+### VPN Configuration
+
+1. Place your OpenVPN configuration and authentication files in the `openvpn-configs/` directory:
+```
+openvpn-configs/
+  ├── auth.txt
+  └── your-vpn-config.ovpn
+```
+Edit `auth.txt` with your VPN username and password (one per line).
+
 
 ### Build and Run with Docker
 
@@ -69,6 +80,8 @@ docker build -t credit-card-analyzer .
 ```bash
 docker run -p 8501:8501 \
   -e GEMINI_API_KEY="your-api-key-here" \
+  -e OPENVPN_CONFIG="your-vpn-config.ovpn" \
+  -v $(pwd)/openvpn-configs:/etc/openvpn \
   credit-card-analyzer
 ```
 
@@ -88,6 +101,11 @@ services:
       - "8501:8501"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./openvpn-configs:/etc/openvpn
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENVPN_CONFIG=your-vpn-config.ovpn
     restart: unless-stopped
 ```
 
@@ -95,6 +113,8 @@ Then run:
 ```bash
 docker-compose up -d
 ```
+
+The container will automatically connect to the VPN using the provided configuration before starting the app.
 
 ## Local Development
 
@@ -136,7 +156,8 @@ uv run python src/main.py
 │           ├── state_2_csv.py     # CSV generation
 │           └── statement_reader.py # Statement processing
 ├── statements/                    # Input PDF statements
-├── pyproject.toml                # Project dependencies
+├── pyproject.toml                 # Project dependencies
+├── entrypoint.sh                  # Entrypoint script (handles VPN and app startup)
 └── README.md
 ```
 

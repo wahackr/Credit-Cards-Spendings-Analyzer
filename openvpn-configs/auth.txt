@@ -1,0 +1,2 @@
+surfshark-openvpn-username
+suefshark-openvpn-password

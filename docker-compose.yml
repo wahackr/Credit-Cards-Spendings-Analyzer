@@ -7,6 +7,9 @@ services:
       - "8501:8501"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENVPN_CONFIG=${OPENVPN_CONFIG}
+    volumes:
+      - ./openvpn-configs:/etc/openvpn
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]
@@ -14,3 +17,17 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    networks:
+      - container-network
+
+networks:
+  container-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
