@@ -1,9 +1,9 @@
 from google import genai
 from langchain.messages import HumanMessage
-from prompts.main import STATEMENT_READER_INSTUCTIONS
-from states.main import Statement
 
 from libs.gemini.main import init_langchain_model
+from libs.prompts.main import STATEMENT_READER_INSTUCTIONS
+from libs.states.main import Statement
 
 
 def read_statement(gemini_api_key: str, gemini_model: str, image_paths: list[str]) -> Statement:
