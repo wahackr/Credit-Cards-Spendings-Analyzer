@@ -14,7 +14,7 @@ from pdf2image import convert_from_path
 def convert_pdf_to_images(
     pdf_path: str,
     output_dir: str,
-    dpi: int = 72,
+    dpi: int = 300,
     fmt: str = 'png',
     verbose: bool = True
 ) -> List[str]:
@@ -25,7 +25,7 @@ def convert_pdf_to_images(
         pdf_path: Path to the PDF file to convert
         output_dir: Directory where images will be saved
         dpi: Resolution for the output images (default: 300)
-        fmt: Image format - 'jpeg', 'png', etc. (default: 'jpeg')
+        fmt: Image format - 'jpeg', 'png', etc. (default: 'png')
         verbose: Print progress messages (default: True)
 
     Returns:
