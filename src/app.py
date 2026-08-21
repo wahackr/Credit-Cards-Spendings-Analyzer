@@ -9,6 +9,7 @@ import streamlit as st
 from libs.tools.pdf_2_image import convert_pdf_to_images
 from libs.tools.state_2_csv import statement_to_csv
 from libs.tools.statement_reader import read_statement
+from libs.tools.statement_results import is_populated_statement
 
 # Page configuration
 st.set_page_config(
@@ -69,6 +70,8 @@ if uploaded_files:
     # Process button
     if st.button("🚀 Analyze Statements", type="primary", use_container_width=True):
         all_rows = "date,transaction_name,amount,category,account,card_name\n"
+        empty_files = []
+        failed_files = []
         
         # Progress tracking
         progress_bar = st.progress(0)
@@ -76,52 +79,88 @@ if uploaded_files:
         
         for idx, uploaded_file in enumerate(uploaded_files):
             status_text.text(f"Processing {uploaded_file.name}...")
-            
-            # Create temporary directory for this PDF
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Save uploaded PDF to temp directory
-                pdf_path = Path(temp_dir) / uploaded_file.name
-                with open(pdf_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                
-                # Convert PDF to images
-                images_dir = Path(temp_dir) / "images"
-                images_dir.mkdir(exist_ok=True)
-                
-                with st.spinner(f"Converting {uploaded_file.name} to images..."):
-                    pdf_images = convert_pdf_to_images(
-                        str(pdf_path),
-                        str(images_dir),
-                        fmt="png"
-                    )
-                
-                # Process with Gemini
-                with st.spinner(f"Analyzing {uploaded_file.name} with Gemini AI..."):
-                    response = read_statement(
-                        gemini_api_key,
-                        gemini_model,
-                        pdf_images
-                    )
-                
-                # Convert to CSV
-                all_rows += statement_to_csv(response)
-                
-                # Show statement summary in expander
-                with st.expander(f"📄 {uploaded_file.name} Summary"):
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Card Name", response.card_name)
-                    with col2:
-                        st.metric("Total Spending", f"HKD ${response.total_spending:,.2f}")
-                    with col3:
-                        st.metric("Transactions", response.number_of_transactions)
-                    
-                    st.caption(f"Due Date: {response.due_date}")
-            
-            # Update progress
-            progress_bar.progress((idx + 1) / len(uploaded_files))
+            try:
+                # Create temporary directory for this PDF
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    # Save uploaded PDF to temp directory
+                    pdf_path = Path(temp_dir) / uploaded_file.name
+                    with open(pdf_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+
+                    # Convert PDF to images
+                    images_dir = Path(temp_dir) / "images"
+                    images_dir.mkdir(exist_ok=True)
+
+                    with st.spinner(f"Converting {uploaded_file.name} to images..."):
+                        pdf_images = convert_pdf_to_images(
+                            str(pdf_path),
+                            str(images_dir),
+                            fmt="png"
+                        )
+
+                    # Process with Gemini
+                    with st.spinner(f"Analyzing {uploaded_file.name} with Gemini AI..."):
+                        response = read_statement(
+                            gemini_api_key,
+                            gemini_model,
+                            pdf_images
+                        )
+
+                    # Compatible endpoints can omit the structured tool call or
+                    # return an unexpected empty value.
+                    if response is None or not hasattr(response, "transactions"):
+                        empty_files.append(uploaded_file.name)
+                        st.warning(
+                            f"⚠️ {uploaded_file.name} returned no structured "
+                            "statement data and was skipped."
+                        )
+                        continue
+
+                    if not is_populated_statement(response):
+                        empty_files.append(uploaded_file.name)
+                        st.warning(
+                            f"⚠️ No transactions were found in "
+                            f"{uploaded_file.name}; the file was skipped."
+                        )
+                        continue
+
+                    # Convert to CSV
+                    all_rows += statement_to_csv(response)
+
+                    # Show statement summary in expander
+                    with st.expander(f"📄 {uploaded_file.name} Summary"):
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Card Name", response.card_name)
+                        with col2:
+                            st.metric("Total Spending", f"HKD ${response.total_spending:,.2f}")
+                        with col3:
+                            st.metric("Transactions", response.number_of_transactions)
+
+                        st.caption(f"Due Date: {response.due_date}")
+            except Exception as exc:
+                failed_files.append(uploaded_file.name)
+                st.warning(
+                    f"⚠️ Could not extract structured data from "
+                    f"{uploaded_file.name}; the file was skipped."
+                )
+                print(f"Failed to process {uploaded_file.name}: {exc}")
+            finally:
+                # Update progress even when an individual file is skipped.
+                progress_bar.progress((idx + 1) / len(uploaded_files))
         
         status_text.text("✅ All statements processed!")
+
+        if empty_files:
+            st.warning(
+                "No transaction data was returned for: "
+                + ", ".join(empty_files)
+            )
+        if failed_files:
+            st.warning(
+                "Structured-output extraction failed for: "
+                + ", ".join(failed_files)
+            )
         
         # Parse CSV into DataFrame
         from io import StringIO
@@ -131,6 +170,13 @@ if uploaded_files:
         
         # Display results
         st.header("📊 Analysis Results")
+
+        if df.empty:
+            st.info(
+                "No transactions were found in the uploaded statements. "
+                "There are no results to chart."
+            )
+            st.stop()
         
         # Summary metrics
         col1, col2, col3, col4 = st.columns(4)

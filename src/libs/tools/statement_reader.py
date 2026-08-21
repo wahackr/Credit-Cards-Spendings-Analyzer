@@ -1,12 +1,21 @@
 from google import genai
 from langchain.messages import HumanMessage
-from prompts.main import STATEMENT_READER_INSTUCTIONS
-from states.main import Statement
 
 from libs.gemini.main import init_langchain_model
+from libs.prompts.main import STATEMENT_READER_INSTUCTIONS
+from libs.states.main import Statement
 
 
-def read_statement(gemini_api_key: str, gemini_model: str, image_paths: list[str]) -> Statement:
+def read_statement(
+    gemini_api_key: str,
+    gemini_model: str,
+    image_paths: list[str],
+) -> Statement | None:
+    """Extract a statement.
+
+    Some structured-output-compatible endpoints return ``None`` when the model
+    omits its tool call, so callers must handle a missing result.
+    """
 
     # Init model
     model = init_langchain_model(gemini_api_key, gemini_model)
