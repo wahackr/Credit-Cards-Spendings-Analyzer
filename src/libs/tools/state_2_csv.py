@@ -1,7 +1,7 @@
 import csv
 from io import StringIO
 
-from libs.states.main import Statement
+from libs.states.statement import Statement
 
 
 def statement_to_csv(statement: Statement) -> str:
