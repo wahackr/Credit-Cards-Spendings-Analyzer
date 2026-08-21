@@ -9,6 +9,12 @@ import streamlit as st
 from libs.tools.pdf_2_image import convert_pdf_to_images
 from libs.tools.state_2_csv import statement_to_csv
 from libs.tools.statement_reader import read_statement
+from libs.llm.main import (
+    GEMINI,
+    OPENAI_COMPATIBLE,
+    configured_providers,
+    load_llm_config,
+)
 
 # Page configuration
 st.set_page_config(
@@ -21,7 +27,7 @@ st.set_page_config(
 st.title("💳 Credit Card Statement Analyzer")
 st.markdown(
     """
-    Upload your credit card PDF statements and get automated transaction analysis powered by Google Gemini AI.
+    Upload your credit card PDF statements and get automated transaction analysis powered by your chosen LLM.
     """
 )
 
@@ -29,17 +35,42 @@ st.markdown(
 with st.sidebar:
     st.header("⚙️ Configuration")
     
-    gemini_api_key = os.getenv("GEMINI_API_KEY", "")
-    
-    if not gemini_api_key:
-        st.error("❌ GEMINI_API_KEY environment variable not found. Please set it before running the app.")
+    available_providers, provider_errors = configured_providers()
+    if not available_providers:
+        st.error("❌ No LLM provider is configured.")
+        st.code(
+            "Gemini: " + provider_errors[GEMINI] + "\n"
+            "OpenAI-compatible: " + provider_errors[OPENAI_COMPATIBLE]
+        )
         st.stop()
-    
-    gemini_model = st.selectbox(
-        "Model",
-        ["gemini-3-flash-preview", "gemini-2.0-flash-exp", "gemini-1.5-pro"],
-        help="Select the Gemini model to use",
+
+    preferred_provider = os.getenv("LLM_PROVIDER", GEMINI).strip().lower()
+    default_provider_index = (
+        available_providers.index(preferred_provider)
+        if preferred_provider in available_providers
+        else 0
     )
+    provider = st.selectbox(
+        "LLM provider",
+        available_providers,
+        index=default_provider_index,
+        help="Only providers configured through environment variables are shown.",
+    )
+
+    if provider == GEMINI:
+        model = st.text_input(
+            "Model",
+            value=os.getenv("GEMINI_MODEL", "gemini-3.7-flash"),
+        )
+    else:
+        model = st.text_input("Model", value=os.getenv("OPENAI_MODEL", "qwen3.5:9b"))
+        st.caption(f"Endpoint: {os.getenv('OPENAI_BASE_URL', 'not configured')}")
+
+    try:
+        llm_config = load_llm_config(provider=provider, model=model)
+    except ValueError as error:
+        st.error(f"❌ Configuration error: {error}")
+        st.stop()
     
     st.divider()
     
@@ -95,13 +126,18 @@ if uploaded_files:
                         fmt="png"
                     )
                 
-                # Process with Gemini
-                with st.spinner(f"Analyzing {uploaded_file.name} with Gemini AI..."):
-                    response = read_statement(
-                        gemini_api_key,
-                        gemini_model,
-                        pdf_images
-                    )
+                # Process with the selected LLM
+                with st.spinner(
+                    f"Analyzing {uploaded_file.name} with {llm_config.provider}..."
+                ):
+                    try:
+                        response = read_statement(llm_config, pdf_images)
+                    except Exception as error:
+                        st.error(
+                            f"❌ {llm_config.provider} could not analyze "
+                            f"{uploaded_file.name}: {error}"
+                        )
+                        st.stop()
                 
                 # Convert to CSV
                 all_rows += statement_to_csv(response)
@@ -126,11 +162,34 @@ if uploaded_files:
         # Parse CSV into DataFrame
         from io import StringIO
         df = pd.read_csv(StringIO(all_rows))
+        df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
+
+        invalid_amounts = df["amount"].isna()
+        if invalid_amounts.any():
+            st.warning(
+                f"⚠️ Ignored {invalid_amounts.sum()} transaction(s) with an "
+                "invalid amount."
+            )
+            df = df.loc[~invalid_amounts].copy()
         
         st.divider()
         
         # Display results
         st.header("📊 Analysis Results")
+
+        if df.empty:
+            st.warning(
+                "⚠️ The selected model returned no valid transactions. "
+                "Review the statement summaries or try another model."
+            )
+            st.download_button(
+                label="📥 Download empty CSV",
+                data=all_rows,
+                file_name="credit_card_analysis.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+            st.stop()
         
         # Summary metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -173,7 +232,13 @@ if uploaded_files:
         # Account breakdown
         st.subheader("🏠 Personal vs Business Account")
         account_spending = df.groupby('account')['amount'].sum().reset_index()
-        account_spending['percentage'] = (account_spending['amount'] / account_spending['amount'].sum() * 100).round(1)
+        account_total = account_spending['amount'].sum()
+        if account_total:
+            account_spending['percentage'] = (
+                account_spending['amount'] / account_total * 100
+            ).round(1)
+        else:
+            account_spending['percentage'] = 0.0
         
         # Create a single stacked bar chart showing 100% distribution
         fig_account = px.bar(

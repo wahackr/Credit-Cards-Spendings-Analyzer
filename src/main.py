@@ -1,15 +1,16 @@
-import logging
 import os
 
-from libs.gemini.main import init_gemini_client, read_images
+from libs.llm.main import load_llm_config
 from libs.tools.pdf_2_image import convert_pdf_to_images, get_pdf_files
 from libs.tools.state_2_csv import statement_to_csv
 from libs.tools.statement_reader import read_statement
 
 # logging.basicConfig(level=logging.DEBUG)
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = "gemini-3-flash-preview"
+try:
+    llm_config = load_llm_config()
+except ValueError as error:
+    raise SystemExit(f"Configuration error: {error}") from error
 
 pdf_folder = f"{os.getcwd()}/statements"
 pdf_files = get_pdf_files(pdf_folder)
@@ -26,17 +27,12 @@ for pdf in pdf_files:
     output_path = f"{pdf.replace(".pdf", "")}/images"
     pdf_images = convert_pdf_to_images(pdf, output_path, fmt="png")
 
-    # 2. send pdf images to gemini for analysis
-    print("Files to be sent to Gemini:")
+    # 2. send PDF images to the configured provider for analysis
+    print(f"Files to be sent to {llm_config.provider} ({llm_config.model}):")
     for img in pdf_images:
         print(img)
 
-    # direct call Gemini API
-    # gemini_client = init_gemini_client(GEMINI_API_KEY)
-    # response = read_images(gemini_client, GEMINI_MODEL, pdf_images)
-
-    # or via LangChain wrapper
-    response = read_statement(GEMINI_API_KEY, GEMINI_MODEL, pdf_images)
+    response = read_statement(llm_config, pdf_images)
 
     statement_rows += statement_to_csv(response)
 

@@ -6,7 +6,14 @@ services:
     ports:
       - "8501:8501"
     environment:
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3-flash-preview}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-not-required}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+      - OPENAI_THINKING=${OPENAI_THINKING}
+      - OPENAI_MAX_OUTPUT_TOKENS=${OPENAI_MAX_OUTPUT_TOKENS}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]
