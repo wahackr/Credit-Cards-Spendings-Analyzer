@@ -14,6 +14,7 @@ services:
       - OPENAI_MODEL=${OPENAI_MODEL}
       - OPENAI_THINKING=${OPENAI_THINKING}
       - OPENAI_MAX_OUTPUT_TOKENS=${OPENAI_MAX_OUTPUT_TOKENS}
+      - MAX_CONCURRENT_STATEMENTS=${MAX_CONCURRENT_STATEMENTS:-2}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]

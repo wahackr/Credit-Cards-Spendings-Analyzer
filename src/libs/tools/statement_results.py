@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from typing import TypeGuard
 
-from libs.states.main import Statement
+from libs.states.statement import Statement
 
 
 def is_populated_statement(response: object) -> TypeGuard[Statement]:

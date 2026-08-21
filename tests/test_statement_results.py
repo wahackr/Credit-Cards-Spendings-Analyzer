@@ -1,6 +1,6 @@
 import unittest
 
-from libs.states.main import Statement, Transaction
+from libs.states.statement import Statement, Transaction
 from libs.tools.statement_results import (
     is_populated_statement,
     partition_statement_responses,
