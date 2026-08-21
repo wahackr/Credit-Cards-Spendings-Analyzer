@@ -1,19 +1,19 @@
 import os
-import tempfile
-from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from libs.tools.pdf_2_image import convert_pdf_to_images
-from libs.tools.state_2_csv import statement_to_csv
-from libs.tools.statement_reader import read_statement
 from libs.llm.main import (
     GEMINI,
     OPENAI_COMPATIBLE,
     configured_providers,
     load_llm_config,
+)
+from libs.tools.statement_processor import (
+    StatementUpload,
+    get_max_concurrent_statements,
+    process_statements_concurrently,
 )
 
 # Page configuration
@@ -104,60 +104,83 @@ if uploaded_files:
         # Progress tracking
         progress_bar = st.progress(0)
         status_text = st.empty()
+        file_status = st.empty()
         
-        for idx, uploaded_file in enumerate(uploaded_files):
-            status_text.text(f"Processing {uploaded_file.name}...")
+        try:
+            max_workers = get_max_concurrent_statements()
+        except ValueError as exc:
+            st.error(str(exc))
+            st.stop()
+
+        # Copy Streamlit upload objects on the main thread; workers only receive bytes.
+        uploads = [
+            StatementUpload(idx, uploaded_file.name, bytes(uploaded_file.getbuffer()))
+            for idx, uploaded_file in enumerate(uploaded_files)
+        ]
+        ordered_results = [None] * len(uploads)
+        stages = {upload.index: "queued" for upload in uploads}
+
+        def show_progress(event):
+            stages[event.index] = (
+                f"{event.stage} ({event.detail})" if event.detail else event.stage
+            )
+            file_status.markdown(
+                "\n".join(
+                    f"- `{upload.filename}` — {stages[upload.index]}"
+                    for upload in uploads
+                )
+            )
+
+        file_status.markdown(
+            "\n".join(f"- `{upload.filename}` — queued" for upload in uploads)
+        )
+        for completed, result in enumerate(
+            process_statements_concurrently(
+                uploads,
+                llm_config,
+                max_workers=max_workers,
+                on_progress=show_progress,
+            ),
+            start=1,
+        ):
+            ordered_results[result.index] = result
+            if result.error is not None:
+                stages[result.index] = "failed"
+                st.warning(f"⚠️ {result.filename}: {result.error}")
+            else:
+                stages[result.index] = "completed"
+            file_status.markdown(
+                "\n".join(
+                    f"- `{upload.filename}` — {stages[upload.index]}"
+                    for upload in uploads
+                )
+            )
+            status_text.text(f"Processed {completed} of {len(uploads)} statements")
+            progress_bar.progress(completed / len(uploads))
+
+        successful_results = [
+            result for result in ordered_results
+            if result is not None and result.error is None and result.statement is not None
+        ]
+        for result in successful_results:
+            response = result.statement
+            all_rows += result.csv_rows
+            with st.expander(f"📄 {result.filename} Summary"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Card Name", response.card_name)
+                with col2:
+                    st.metric("Total Spending", f"HKD ${response.total_spending:,.2f}")
+                with col3:
+                    st.metric("Transactions", response.number_of_transactions)
+
+                st.caption(f"Due Date: {response.due_date}")
             
-            # Create temporary directory for this PDF
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Save uploaded PDF to temp directory
-                pdf_path = Path(temp_dir) / uploaded_file.name
-                with open(pdf_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                
-                # Convert PDF to images
-                images_dir = Path(temp_dir) / "images"
-                images_dir.mkdir(exist_ok=True)
-                
-                with st.spinner(f"Converting {uploaded_file.name} to images..."):
-                    pdf_images = convert_pdf_to_images(
-                        str(pdf_path),
-                        str(images_dir),
-                        fmt="png"
-                    )
-                
-                # Process with the selected LLM
-                with st.spinner(
-                    f"Analyzing {uploaded_file.name} with {llm_config.provider}..."
-                ):
-                    try:
-                        response = read_statement(llm_config, pdf_images)
-                    except Exception as error:
-                        st.error(
-                            f"❌ {llm_config.provider} could not analyze "
-                            f"{uploaded_file.name}: {error}"
-                        )
-                        st.stop()
-                
-                # Convert to CSV
-                all_rows += statement_to_csv(response)
-                
-                # Show statement summary in expander
-                with st.expander(f"📄 {uploaded_file.name} Summary"):
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Card Name", response.card_name)
-                    with col2:
-                        st.metric("Total Spending", f"HKD ${response.total_spending:,.2f}")
-                    with col3:
-                        st.metric("Transactions", response.number_of_transactions)
-                    
-                    st.caption(f"Due Date: {response.due_date}")
-            
-            # Update progress
-            progress_bar.progress((idx + 1) / len(uploaded_files))
-        
         status_text.text("✅ All statements processed!")
+
+        if not any(result.csv_rows.strip() for result in successful_results):
+            st.warning("No transactions were extracted from the uploaded statements.")
+            st.stop()
         
         # Parse CSV into DataFrame
         from io import StringIO

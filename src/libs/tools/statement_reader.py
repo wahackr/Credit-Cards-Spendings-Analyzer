@@ -7,7 +7,7 @@ from langchain.messages import HumanMessage
 
 from libs.llm.main import GEMINI, LLMConfig, create_chat_model
 from libs.prompts.main import STATEMENT_READER_INSTUCTIONS
-from libs.states.main import Statement
+from libs.states.statement import Statement
 
 
 def _image_data_url(image_path: str) -> str:

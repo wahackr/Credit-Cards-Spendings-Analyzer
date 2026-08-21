@@ -11,6 +11,7 @@ An automated tool that converts credit card PDF statements into structured CSV d
 - 💼 **Account Separation**: Distinguishes between Personal and Business accounts
 - 💱 **Multi-Currency Support**: Handles statements with multiple currencies, prioritizing HKD
 - 🔍 **Smart Processing**: Handles multi-line transactions and DCC fees
+- ⚡ **Concurrent Batches**: Processes multiple uploaded statements with bounded concurrency
 
 ## Transaction Categories
 
@@ -150,6 +151,7 @@ Gemini:
 docker run -p 8501:8501 \
   -e LLM_PROVIDER="gemini" \
   -e GEMINI_API_KEY="your-api-key-here" \
+  -e MAX_CONCURRENT_STATEMENTS=2 \
   credit-card-analyzer
 ```
 
@@ -192,6 +194,7 @@ services:
       - OPENAI_MODEL=${OPENAI_MODEL}
       - OPENAI_THINKING=${OPENAI_THINKING}
       - OPENAI_MAX_OUTPUT_TOKENS=${OPENAI_MAX_OUTPUT_TOKENS}
+      - MAX_CONCURRENT_STATEMENTS=${MAX_CONCURRENT_STATEMENTS:-2}
     restart: unless-stopped
 ```
 
@@ -204,6 +207,10 @@ Set the desired variables in your shell or a Compose `.env` file before starting
 the service. Variables for an unused provider may remain unset.
 
 ## Local Development
+
+Set `MAX_CONCURRENT_STATEMENTS` to a positive integer to control how many uploaded
+statements are processed at once. It defaults to `2`; keep it low because PDF
+rendering consumes memory and AI providers may enforce rate limits.
 
 1. Place your PDF credit card statements in the `statements/` directory:
 ```
