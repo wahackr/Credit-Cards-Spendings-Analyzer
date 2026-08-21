@@ -60,7 +60,7 @@ with st.sidebar:
     if provider == GEMINI:
         model = st.text_input(
             "Model",
-            value=os.getenv("GEMINI_MODEL", "gemini-3.7-flash"),
+            value=os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"),
         )
     else:
         model = st.text_input("Model", value=os.getenv("OPENAI_MODEL", "qwen3.5:9b"))
