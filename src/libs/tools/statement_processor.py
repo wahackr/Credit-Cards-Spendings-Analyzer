@@ -11,6 +11,7 @@ from libs.tools.pdf_2_image import convert_pdf_to_images
 from libs.tools.retry import retry_transient
 from libs.tools.state_2_csv import statement_to_csv
 from libs.tools.statement_reader import read_statement
+from libs.tools.statement_results import is_populated_statement
 
 
 DEFAULT_MAX_CONCURRENT_STATEMENTS = 2
@@ -82,6 +83,12 @@ def process_statement(
                     )
                 ),
             )
+            if not is_populated_statement(statement):
+                return StatementResult(
+                    index=upload.index,
+                    filename=upload.filename,
+                    statement=statement,
+                )
             return StatementResult(
                 index=upload.index,
                 filename=upload.filename,

@@ -1,5 +1,6 @@
 STATEMENT_READER_INSTUCTIONS = """
 Analyze the credit card statments, list out all the transactions with date (YYYY-MM-DD), transaction name and amount. Payment credits can be ignored.
+Always return a Statement structured response. If the statement contains no transaction rows, return an empty transactions list, with number_of_transactions set to 0 and total_spending set to 0. Do not invent transactions or statement metadata.
 Some statments may incluing the original currency and amount, but please always use the HKD column for analysis.
 Some statments may use more than 1 lines for a single transaction, please make sure to capture all lines for each transaction.
 Some transactions are pretty much the same and continously repeated, please make sure to capture all transactions, even if they looks repeated.

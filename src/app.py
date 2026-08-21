@@ -15,6 +15,7 @@ from libs.tools.statement_processor import (
     get_max_concurrent_statements,
     process_statements_concurrently,
 )
+from libs.tools.statement_results import is_populated_statement
 
 # Page configuration
 st.set_page_config(
@@ -100,7 +101,7 @@ if uploaded_files:
     # Process button
     if st.button("🚀 Analyze Statements", type="primary", use_container_width=True):
         all_rows = "date,transaction_name,amount,category,account,card_name\n"
-        
+
         # Progress tracking
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -160,8 +161,27 @@ if uploaded_files:
 
         successful_results = [
             result for result in ordered_results
-            if result is not None and result.error is None and result.statement is not None
+            if result is not None
+            and result.error is None
+            and is_populated_statement(result.statement)
         ]
+        empty_results = [
+            result for result in ordered_results
+            if result is not None
+            and result.error is None
+            and not is_populated_statement(result.statement)
+        ]
+        failed_results = [
+            result for result in ordered_results
+            if result is not None and result.error is not None
+        ]
+
+        for result in empty_results:
+            st.warning(
+                f"⚠️ No transactions were found in {result.filename}; "
+                "the file was skipped."
+            )
+
         for result in successful_results:
             response = result.statement
             all_rows += result.csv_rows
@@ -175,12 +195,19 @@ if uploaded_files:
                     st.metric("Transactions", response.number_of_transactions)
 
                 st.caption(f"Due Date: {response.due_date}")
-            
+
         status_text.text("✅ All statements processed!")
 
-        if not any(result.csv_rows.strip() for result in successful_results):
-            st.warning("No transactions were extracted from the uploaded statements.")
-            st.stop()
+        if empty_results:
+            st.warning(
+                "No transaction data was returned for: "
+                + ", ".join(result.filename for result in empty_results)
+            )
+        if failed_results:
+            st.warning(
+                "Statement processing failed for: "
+                + ", ".join(result.filename for result in failed_results)
+            )
         
         # Parse CSV into DataFrame
         from io import StringIO

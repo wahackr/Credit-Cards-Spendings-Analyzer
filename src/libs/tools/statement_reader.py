@@ -49,8 +49,11 @@ def _gemini_file_content(image_paths: list[str]) -> list[dict]:
     return content
 
 
-def read_statement(config: LLMConfig, image_paths: list[str]) -> Statement:
-    """Read statement images and validate the result against Statement."""
+def read_statement(
+    config: LLMConfig,
+    image_paths: list[str],
+) -> Statement | None:
+    """Read statement images, returning None when no structured call is made."""
     if not image_paths:
         raise ValueError("At least one statement image is required.")
 
@@ -64,8 +67,9 @@ def read_statement(config: LLMConfig, image_paths: list[str]) -> Statement:
     )
     response = structured_output_model.invoke([HumanMessage(content=content)])
 
-    print("=" * 64)
-    print(f"Structured LLM response ({config.provider} / {config.model}):")
-    print(response.model_dump_json(indent=2))
-    print("=" * 64)
+    if response is not None:
+        print("=" * 64)
+        print(f"Structured LLM response ({config.provider} / {config.model}):")
+        print(response.model_dump_json(indent=2))
+        print("=" * 64)
     return response
