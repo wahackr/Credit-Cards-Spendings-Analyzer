@@ -85,7 +85,7 @@ export GEMINI_MODEL=gemini-3-flash-preview  # optional; this is the default
 
 ```bash
 export LLM_PROVIDER=openai-compatible
-export OPENAI_BASE_URL=http://10.7.7.79/v1
+export OPENAI_BASE_URL=http://10.7.7.79:8080/v1
 export OPENAI_API_KEY=not-required
 export OPENAI_MODEL=qwen3.5:9b
 export OPENAI_THINKING=false
@@ -95,6 +95,13 @@ export OPENAI_THINKING=false
 set, it must not be empty. The selected model and server must support image inputs
 and structured output/tool calling through an OpenAI-compatible Chat Completions
 API.
+
+For local development you can keep these variables in an untracked `.env` file at
+the repository root instead of exporting them in your shell. It is loaded by both
+the CLI and the Streamlit app, and its values take precedence over variables
+already exported in the environment (for example a stale `OPENAI_API_KEY` from
+your shell profile). Docker does not copy `.env` into the image; pass the
+variables through the shell or a Compose `.env` file instead.
 
 Ollama enables thinking by default for supported models such as Qwen. Thinking
 can consume the model's entire context window before it finishes the required
@@ -110,7 +117,7 @@ Streamlit sidebar:
 export GEMINI_API_KEY=your-gemini-api-key
 export GEMINI_MODEL=gemini-3-flash-preview
 
-export OPENAI_BASE_URL=http://10.7.7.79/v1
+export OPENAI_BASE_URL=http://10.7.7.79:8080/v1
 export OPENAI_API_KEY=not-required
 export OPENAI_MODEL=qwen3.5:9b
 export OPENAI_THINKING=false
@@ -160,7 +167,7 @@ OpenAI-compatible:
 ```bash
 docker run -p 8501:8501 \
   -e LLM_PROVIDER="openai-compatible" \
-  -e OPENAI_BASE_URL="http://10.7.7.79/v1" \
+  -e OPENAI_BASE_URL="http://10.7.7.79:8080/v1" \
   -e OPENAI_API_KEY="not-required" \
   -e OPENAI_MODEL="qwen3.5:9b" \
   -e OPENAI_THINKING="false" \

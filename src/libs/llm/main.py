@@ -1,9 +1,15 @@
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Mapping
 
+from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
+
+# Repo-root .env holds local LLM endpoint settings and takes precedence over
+# ambient shell exports (e.g. a stale OPENAI_API_KEY from ~/.bashrc).
+load_dotenv(Path(__file__).resolve().parents[3] / ".env", override=True)
 
 GEMINI = "gemini"
 OPENAI_COMPATIBLE = "openai-compatible"
