@@ -11,7 +11,7 @@ An automated tool that converts credit card PDF statements into structured CSV d
 - 💼 **Account Separation**: Distinguishes between Personal and Business accounts
 - 💱 **Multi-Currency Support**: Handles statements with multiple currencies, prioritizing HKD
 - 🔍 **Smart Processing**: Handles multi-line transactions and DCC fees
-- ⚡ **Concurrent Batches**: Processes multiple uploaded statements with bounded concurrency
+- ⚡ **Background Jobs**: Uploads run as long-running jobs with live progress (SSE), cancellation, and CSV download; multiple statements are processed with bounded concurrency
 
 ## Transaction Categories
 
@@ -64,12 +64,12 @@ determined from the provider-specific environment variables below.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `LLM_PROVIDER` | CLI: yes when using OpenAI-compatible; Streamlit: no | CLI provider selection and preferred Streamlit default. Defaults to `gemini`. |
-| `GEMINI_API_KEY` | For Gemini | Google Gemini API key. Its presence enables Gemini in Streamlit. |
+| `LLM_PROVIDER` | CLI: yes when using OpenAI-compatible; web app: no | CLI provider selection and preferred web app default. Defaults to `gemini`. |
+| `GEMINI_API_KEY` | For Gemini | Google Gemini API key. Its presence enables Gemini in the web app. |
 | `GEMINI_MODEL` | No | Gemini model name. Defaults to `gemini-3-flash-preview`. |
 | `OPENAI_BASE_URL` | For OpenAI-compatible | API base URL, normally ending in `/v1`. |
 | `OPENAI_API_KEY` | For OpenAI-compatible | API key. Defaults to `not-required`; use a placeholder for unauthenticated local servers. |
-| `OPENAI_MODEL` | For OpenAI-compatible | Model name exposed by the server. Its presence, together with `OPENAI_BASE_URL`, enables this provider in Streamlit. |
+| `OPENAI_MODEL` | For OpenAI-compatible | Model name exposed by the server. Its presence, together with `OPENAI_BASE_URL`, enables this provider in the web app. |
 | `OPENAI_THINKING` | No | Sends the nonstandard `think` option. Set to `false` for thinking-capable Qwen models on Ollama. Omit it for servers that do not support this option. |
 | `OPENAI_MAX_OUTPUT_TOKENS` | No | Positive integer limiting completion length. Omit it to use the server default. |
 
@@ -98,7 +98,7 @@ API.
 
 For local development you can keep these variables in an untracked `.env` file at
 the repository root instead of exporting them in your shell. It is loaded by both
-the CLI and the Streamlit app, and its values take precedence over variables
+the CLI and the web app, and its values take precedence over variables
 already exported in the environment (for example a stale `OPENAI_API_KEY` from
 your shell profile). Docker does not copy `.env` into the image; pass the
 variables through the shell or a Compose `.env` file instead.
@@ -111,7 +111,7 @@ is Ollama-specific and is only sent when the environment variable is set.
 ### Configure both providers
 
 Set both groups of provider variables when you want to switch providers in the
-Streamlit sidebar:
+web app's configuration panel:
 
 ```bash
 export GEMINI_API_KEY=your-gemini-api-key
@@ -122,13 +122,13 @@ export OPENAI_API_KEY=not-required
 export OPENAI_MODEL=qwen3.5:9b
 export OPENAI_THINKING=false
 
-# CLI selection and initial Streamlit selection:
+# CLI selection and initial web app selection:
 export LLM_PROVIDER=openai-compatible
 ```
 
-`LLM_PROVIDER` does not hide the other configured provider in Streamlit. It only
-chooses the initial selection. The sidebar lists every provider whose required
-configuration is valid. The CLI has no provider selector, so it uses
+`LLM_PROVIDER` does not hide the other configured provider in the web app. It only
+chooses the initial selection. The configuration panel lists every provider whose
+required configuration is valid. The CLI has no provider selector, so it uses
 `LLM_PROVIDER` directly and defaults to Gemini when the variable is omitted.
 
 ### Image handling
@@ -155,7 +155,7 @@ docker build -t credit-card-analyzer .
 Gemini:
 
 ```bash
-docker run -p 8501:8501 \
+docker run -p 8000:8000 \
   -e LLM_PROVIDER="gemini" \
   -e GEMINI_API_KEY="your-api-key-here" \
   -e MAX_CONCURRENT_STATEMENTS=2 \
@@ -165,7 +165,7 @@ docker run -p 8501:8501 \
 OpenAI-compatible:
 
 ```bash
-docker run -p 8501:8501 \
+docker run -p 8000:8000 \
   -e LLM_PROVIDER="openai-compatible" \
   -e OPENAI_BASE_URL="http://10.7.7.79:8080/v1" \
   -e OPENAI_API_KEY="not-required" \
@@ -179,7 +179,7 @@ only to the host's `localhost` is not reachable as `localhost` from the containe
 use a reachable host address or an appropriate Docker host-network configuration.
 
 3. **Access the app:**
-Open your browser to `http://localhost:8501`
+Open your browser to `http://localhost:8000`
 
 ### Docker Compose (Recommended)
 
@@ -191,7 +191,7 @@ services:
   app:
     build: .
     ports:
-      - "8501:8501"
+      - "8000:8000"
     environment:
       - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -233,18 +233,39 @@ statements/
 uv run python src/main.py
 ```
 
-Or start the Streamlit application, then select the provider and model in the sidebar:
+Or start the web application, then select the provider and model in the
+configuration panel:
 
 ```bash
-uv run streamlit run src/app.py
+uv run uvicorn webapp.app:app --app-dir src --reload --port 8000
 ```
 
-Streamlit provider behavior:
+Open `http://localhost:8000`. Uploads run as background jobs: the browser follows
+progress over Server-Sent Events, the server keeps processing statements even if
+you close the tab, and finished jobs stay available for results and CSV download
+until the server restarts.
+
+Web app provider behavior:
 
 - Only `GEMINI_API_KEY` set: only Gemini is listed.
 - Only `OPENAI_BASE_URL` and `OPENAI_MODEL` set: only OpenAI-compatible is listed.
 - Both configurations set: both are listed, and `LLM_PROVIDER` chooses the initial selection.
-- Neither configured: the app displays the missing provider settings and stops.
+- Neither configured: the app displays the missing provider settings and blocks uploads.
+
+### API overview
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/jobs` | `multipart/form-data` upload of PDFs (`files` field); optional `provider`/`model` query params. Returns the job. |
+| `GET /api/jobs` / `GET /api/jobs/{id}` | List jobs or fetch one with per-file stages. |
+| `GET /api/jobs/{id}/events` | Server-Sent Events stream of progress until the job finishes. |
+| `POST /api/jobs/{id}/cancel` | Stop queued files and let running ones drain. |
+| `DELETE /api/jobs/{id}` | Drop the job and its stored results. |
+| `GET /api/jobs/{id}/transactions` | Transactions, per-statement summaries, and invalid-amount count. |
+| `GET /api/jobs/{id}/csv` | Download the consolidated CSV. |
+| `GET /healthz` | Health probe used by Docker. |
+
+Interactive API docs are served at `/docs`.
 
 ### OpenAI-compatible troubleshooting
 
@@ -254,7 +275,7 @@ disable thinking and restart the application so it reloads the environment:
 
 ```bash
 export OPENAI_THINKING=false
-uv run streamlit run src/app.py
+uv run uvicorn webapp.app:app --app-dir src --port 8000
 ```
 
 If a large statement still reaches the limit, increase the model context size on
@@ -273,19 +294,25 @@ completion and does not increase the available context.
 ```
 .
 ├── src/
-│   ├── main.py                    # Main entry point
+│   ├── main.py                    # CLI batch entry point
+│   ├── webapp/                    # FastAPI web app
+│   │   ├── app.py                 # API routes and static page
+│   │   ├── jobs.py                # In-memory job manager
+│   │   └── static/index.html      # Single-page frontend
 │   └── libs/
 │       ├── llm/                   # Provider configuration and clients
 │       │   └── main.py
 │       ├── prompts/               # AI prompts
 │       │   └── main.py
 │       ├── states/                # Data models
-│       │   └── main.py
+│       │   └── statement.py
 │       └── tools/                 # Utility tools
 │           ├── pdf_2_image.py     # PDF conversion
 │           ├── state_2_csv.py     # CSV generation
-│           └── statement_reader.py # Statement processing
-├── statements/                    # Input PDF statements
+│           ├── statement_processor.py # Concurrent statement pipeline
+│           ├── statement_reader.py # Statement processing
+│           └── retry.py           # Transient error retry
+├── statements/                    # Input PDF statements (CLI mode)
 ├── pyproject.toml                # Project dependencies
 └── README.md
 ```

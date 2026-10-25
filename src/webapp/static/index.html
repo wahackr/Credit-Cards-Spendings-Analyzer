@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>💳 Credit Card Statement Analyzer</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #171e2c;
+    --panel-2: #1e2739;
+    --line: #2a3549;
+    --text: #e6ecf7;
+    --muted: #93a1b8;
+    --accent: #4f8cff;
+    --ok: #3ecf8e;
+    --warn: #f5a623;
+    --bad: #ff6b6b;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 22px 28px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  main { padding: 24px 28px 60px; max-width: 1180px; margin: 0 auto; }
+  .grid { display: grid; grid-template-columns: 340px 1fr; gap: 22px; align-items: start; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 18px;
+  }
+  .panel + .panel { margin-top: 18px; }
+  h2 { font-size: 15px; margin: 0 0 12px; letter-spacing: .2px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 5px; }
+  select, input[type=text] {
+    width: 100%; padding: 9px 10px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; font-size: 14px;
+  }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; word-break: break-all; }
+  .drop {
+    border: 1.5px dashed var(--line); border-radius: var(--radius); padding: 22px;
+    text-align: center; color: var(--muted); cursor: pointer; transition: .15s;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); color: var(--text); background: #1b2436; }
+  .drop strong { color: var(--text); }
+  ul.files { list-style: none; padding: 0; margin: 12px 0 0; font-size: 13px; }
+  ul.files li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; }
+  ul.files li span.size { color: var(--muted); }
+  button {
+    font: inherit; border: 1px solid var(--line); background: var(--panel-2);
+    color: var(--text); padding: 9px 14px; border-radius: 8px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.danger { color: var(--bad); }
+  .row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .bar { height: 8px; background: var(--panel-2); border-radius: 6px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  .status { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .fileline { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .fileline:last-child { border-bottom: 0; }
+  .fileline .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .pill.processing, .pill.retrying, .pill.analyzing, .pill.converting { color: var(--accent); border-color: var(--accent); }
+  .pill.completed { color: var(--ok); border-color: var(--ok); }
+  .pill.failed { color: var(--bad); border-color: var(--bad); }
+  .pill.empty, .pill.cancelled, .pill.cancelling { color: var(--warn); border-color: var(--warn); }
+  .detail { color: var(--muted); font-size: 12px; max-width: 45%; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  pre.log {
+    background: #0b1018; border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+    font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace; max-height: 190px; overflow: auto; margin: 12px 0 0;
+  }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .metric { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .metric .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .metric .v { font-size: 19px; font-weight: 650; margin-top: 4px; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
+  @media (max-width: 760px) { .charts { grid-template-columns: 1fr; } }
+  .legend { font-size: 12px; margin-top: 10px; }
+  .legend div { display: flex; align-items: center; gap: 7px; margin: 3px 0; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+  th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; position: sticky; top: 0; background: var(--panel); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tablewrap { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .filters select { width: auto; min-width: 150px; }
+  .empty-note { color: var(--warn); font-size: 13px; }
+  .jobs { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+  .jobs li { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .jobs li:last-child { border-bottom: 0; }
+  .jobs a { color: var(--accent); text-decoration: none; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-summary { font-size: 13px; color: var(--muted); margin: 6px 0; }
+  .card-summary b { color: var(--text); }
+  .err { color: var(--bad); font-size: 13px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>💳 Credit Card Statement Analyzer</h1>
+  <p>PDF statements → structured transactions, processed as background jobs.</p>
+</header>
+
+<main>
+  <div class="grid">
+    <div>
+      <section class="panel">
+        <h2>⚙️ Configuration</h2>
+        <div id="config-error" class="err" hidden></div>
+        <label for="provider">LLM provider</label>
+        <select id="provider"></select>
+        <label for="model">Model</label>
+        <input type="text" id="model" />
+        <div class="hint" id="endpoint"></div>
+      </section>
+
+      <section class="panel">
+        <h2>📄 Statements</h2>
+        <div class="drop" id="drop">
+          <strong>Drop PDFs here</strong> or click to browse
+          <div class="hint">Multiple files are queued and processed one at a time.</div>
+        </div>
+        <input type="file" id="files" accept=".pdf" multiple hidden />
+        <ul class="files" id="filelist"></ul>
+        <div class="row">
+          <button class="primary" id="start" disabled>🚀 Analyze Statements</button>
+          <button id="cancel" class="danger" hidden>Cancel</button>
+        </div>
+        <div class="bar" id="barwrap" hidden><i id="bar"></i></div>
+        <div class="status" id="status"></div>
+        <div id="filestatus"></div>
+        <pre class="log" id="log" hidden></pre>
+      </section>
+
+      <section class="panel">
+        <h2>🗂 Jobs</h2>
+        <ul class="jobs" id="jobs"></ul>
+      </section>
+    </div>
+
+    <div>
+      <section class="panel" id="results" hidden>
+        <h2>📊 Analysis Results</h2>
+        <div id="summaries"></div>
+        <div class="metrics" id="metrics"></div>
+        <div class="charts">
+          <div><h2>💰 Spending by Category</h2><div id="cat-chart"></div></div>
+          <div><h2>💳 Spending by Card</h2><div id="card-chart"></div></div>
+        </div>
+        <div class="charts">
+          <div><h2>🏠 Personal vs Business</h2><div id="account-chart"></div></div>
+        </div>
+        <h2 style="margin-top:22px">📝 All Transactions</h2>
+        <div class="filters">
+          <select id="f-category" multiple size="1"></select>
+          <select id="f-account" multiple size="1"></select>
+        </div>
+        <div class="tablewrap"><table id="txtable"><thead></thead><tbody></tbody></table></div>
+        <div class="row">
+          <button id="download">📥 Download CSV</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => "HKD $" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const PALETTE = ["#4f8cff", "#3ecf8e", "#f5a623", "#ff6b6b", "#b57bff", "#2dd4bf", "#f472b6", "#a3e635", "#fb923c", "#60a5fa", "#94a3b8"];
+
+let selected = [];           // File objects staged for upload
+let currentJob = null;       // job id being followed
+let source = null;           // EventSource
+let transactions = [];
+
+// ----------------------------------------------------------- configuration ---
+async function loadConfig() {
+  const res = await fetch("/api/config");
+  const cfg = await res.json();
+  const sel = $("provider");
+  sel.innerHTML = "";
+  cfg.providers.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p;
+    opt.textContent = p;
+    sel.appendChild(opt);
+  });
+  const err = $("config-error");
+  if (!cfg.providers.length) {
+    err.hidden = false;
+    err.textContent = "No LLM provider configured. " + JSON.stringify(cfg.errors);
+    $("start").disabled = true;
+  }
+  applyDefaults(cfg);
+  sel.onchange = () => applyDefaults(cfg);
+  $("endpoint").textContent = cfg.max_workers === 1
+    ? "Concurrency: 1 statement at a time."
+    : `Concurrency: ${cfg.max_workers} statements at a time.`;
+}
+
+function applyDefaults(cfg) {
+  const provider = $("provider").value;
+  const def = cfg.defaults[provider] || {};
+  $("model").value = def.model || "";
+  $("endpoint").textContent = (def.base_url ? `Endpoint: ${def.base_url} · ` : "") +
+    (cfg.max_workers === 1 ? "Concurrency: 1 statement at a time." : `Concurrency: ${cfg.max_workers} statements.`);
+}
+
+// ---------------------------------------------------------------- uploads ---
+$("drop").addEventListener("click", () => $("files").click());
+$("files").addEventListener("change", (e) => stage(e.target.files));
+["dragover", "dragleave", "drop"].forEach((type) =>
+  $("drop").addEventListener(type, (e) => {
+    e.preventDefault();
+    $("drop").classList.toggle("over", type === "dragover");
+    if (type === "drop") stage(e.dataTransfer.files);
+  })
+);
+
+function stage(fileList) {
+  selected = [...fileList].filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+  const list = $("filelist");
+  list.innerHTML = "";
+  selected.forEach((f) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span>${escapeHtml(f.name)}</span><span class="size">${(f.size / 1024 / 1024).toFixed(1)} MB</span>`;
+    list.appendChild(li);
+  });
+  $("start").disabled = selected.length === 0 || !$("provider").value;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ------------------------------------------------------------------- jobs ---
+async function startJob() {
+  const form = new FormData();
+  selected.forEach((f) => form.append("files", f, f.name));
+  const params = new URLSearchParams();
+  if ($("provider").value) params.set("provider", $("provider").value);
+  if ($("model").value) params.set("model", $("model").value);
+
+  $("start").disabled = true;
+  $("log").hidden = false;
+  $("log").textContent = "";
+  $("barwrap").hidden = false;
+  $("bar").style.width = "0%";
+  $("status").textContent = "Submitting…";
+  $("cancel").hidden = false;
+  $("results").hidden = true;
+
+  const res = await fetch(`/api/jobs?${params.toString()}`, { method: "POST", body: form });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    $("status").textContent = "❌ " + (body.detail || res.statusText);
+    $("start").disabled = false;
+    $("cancel").hidden = true;
+    return;
+  }
+  const job = await res.json();
+  followJob(job.id);
+  refreshJobs();
+}
+
+function followJob(jobId) {
+  currentJob = jobId;
+  if (source) source.close();
+  source = new EventSource(`/api/jobs/${jobId}/events`);
+  source.onmessage = (e) => {
+    const ev = JSON.parse(e.data);
+    log(ev);
+    if (ev.filename) updateFileLine(ev);
+    if (["completed", "cancelled", "failed"].includes(ev.stage) && !ev.filename) {
+      source.close();
+      source = null;
+      $("status").textContent = `✅ Job ${ev.stage} — ${ev.detail}`;
+      $("cancel").hidden = true;
+      $("start").disabled = selected.length === 0;
+      loadResults(jobId);
+      refreshJobs();
+    }
+  };
+  source.onerror = () => { source.close(); source = null; };
+  poll(jobId);
+}
+
+async function poll(jobId) {
+  const res = await fetch(`/api/jobs/${jobId}`);
+  if (!res.ok) return;
+  const job = await res.json();
+  renderFileLines(job);
+  const done = job.completed + job.empty + job.failed + job.cancelled;
+  $("bar").style.width = `${Math.round((done / job.total) * 100)}%`;
+  $("status").textContent = `${job.status} — ${done}/${job.total} statements`;
+  if (["completed", "cancelled"].includes(job.status)) {
+    $("results").hidden = false;
+    loadResults(jobId);
+  }
+}
+
+function renderFileLines(job) {
+  const box = $("filestatus");
+  box.innerHTML = "";
+  job.files.forEach((f) => {
+    const div = document.createElement("div");
+    div.className = "fileline";
+    div.dataset.name = f.filename;
+    div.innerHTML = `<span class="name">${escapeHtml(f.filename)}</span>` +
+      `<span class="pill ${f.stage}">${f.stage}</span>` +
+      `<span class="detail">${escapeHtml(f.error || f.detail || "")}</span>`;
+    box.appendChild(div);
+  });
+}
+
+function updateFileLine(ev) {
+  const line = $("filestatus").querySelector(`[data-name="${CSS.escape(ev.filename)}"]`);
+  if (!line) return;
+  const pill = line.querySelector(".pill");
+  pill.className = `pill ${ev.stage}`;
+  pill.textContent = ev.stage;
+  line.querySelector(".detail").textContent = ev.detail || "";
+}
+
+function log(ev) {
+  const el = $("log");
+  const who = ev.filename ? `${ev.filename}: ` : "";
+  el.textContent += `${ev.ts.slice(11, 19)} ${who}${ev.stage}${ev.detail ? ` — ${ev.detail}` : ""}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+async function cancelJob() {
+  if (!currentJob) return;
+  $("cancel").disabled = true;
+  await fetch(`/api/jobs/${currentJob}/cancel`, { method: "POST" });
+  $("cancel").disabled = false;
+}
+
+async function refreshJobs() {
+  const res = await fetch("/api/jobs");
+  const jobs = await res.json();
+  const list = $("jobs");
+  list.innerHTML = "";
+  jobs.reverse().forEach((j) => {
+    const li = document.createElement("li");
+    const label = `${j.files.length} file(s) · ${j.model}`;
+    li.innerHTML = `<a href="#" data-id="${j.id}">${escapeHtml(label)}</a>` +
+      `<span class="pill ${j.status}">${j.status}</span>` +
+      `<button class="danger" data-del="${j.id}" title="Delete">✕</button>`;
+    li.querySelector("a").onclick = (e) => { e.preventDefault(); followJob(j.id); poll(j.id); };
+    li.querySelector("button").onclick = async () => {
+      await fetch(`/api/jobs/${j.id}`, { method: "DELETE" });
+      refreshJobs();
+    };
+    list.appendChild(li);
+  });
+}
+
+// ---------------------------------------------------------------- results ---
+async function loadResults(jobId) {
+  const res = await fetch(`/api/jobs/${jobId}/transactions`);
+  if (!res.ok) return;
+  const data = await res.json();
+  transactions = data.transactions;
+  $("results").hidden = false;
+
+  $("summaries").innerHTML = data.summaries.map((s) =>
+    `<div class="card-summary"><b>${escapeHtml(s.card_name)}</b> · ${escapeHtml(s.file_name)} · ` +
+    `${fmt(s.total_spending)} · ${s.number_of_transactions} transactions · due ${escapeHtml(s.due_date)}</div>`
+  ).join("");
+
+  if (!transactions.length) {
+    $("metrics").innerHTML = `<div class="empty-note">No valid transactions were returned by the model.</div>`;
+    ["cat-chart", "card-chart", "account-chart"].forEach((id) => ($(id).innerHTML = ""));
+    $("txtable").querySelector("thead").innerHTML = "";
+    $("txtable").querySelector("tbody").innerHTML = "";
+    return;
+  }
+
+  const total = transactions.reduce((s, t) => s + t.amount, 0);
+  const personal = transactions.filter((t) => t.account === "Personal").reduce((s, t) => s + t.amount, 0);
+  const business = transactions.filter((t) => t.account === "Business").reduce((s, t) => s + t.amount, 0);
+  $("metrics").innerHTML = [
+    ["Transactions", transactions.length],
+    ["Total Spending", fmt(total)],
+    ["Personal", fmt(personal)],
+    ["Business", fmt(business)],
+  ].map(([k, v]) => `<div class="metric"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+
+  drawDonut("cat-chart", groupBy(transactions, "category"));
+  drawDonut("card-chart", groupBy(transactions, "card_name"));
+  drawStacked("account-chart", groupBy(transactions, "account"));
+
+  buildFilter("f-category", [...new Set(transactions.map((t) => t.category))]);
+  buildFilter("f-account", [...new Set(transactions.map((t) => t.account))]);
+  renderTable();
+  $("download").onclick = () => { window.location.href = `/api/jobs/${currentJob}/csv`; };
+}
+
+function groupBy(rows, key) {
+  const map = new Map();
+  rows.forEach((r) => map.set(r[key], (map.get(r[key]) || 0) + r.amount));
+  return [...map.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function buildFilter(id, values) {
+  const sel = $(id);
+  sel.innerHTML = "";
+  values.forEach((v) => {
+    const opt = document.createElement("option");
+    opt.value = v; opt.textContent = v; opt.selected = true;
+    sel.appendChild(opt);
+  });
+  sel.onchange = renderTable;
+}
+
+function selectedValues(id) {
+  return [...$(id).selectedOptions].map((o) => o.value);
+}
+
+function renderTable() {
+  const cats = selectedValues("f-category");
+  const accounts = selectedValues("f-account");
+  const rows = transactions.filter((t) => cats.includes(t.category) && accounts.includes(t.account));
+  $("txtable").querySelector("thead").innerHTML =
+    "<tr><th>Date</th><th>Transaction</th><th class='num'>Amount</th><th>Category</th><th>Account</th><th>Card</th></tr>";
+  $("txtable").querySelector("tbody").innerHTML = rows.map((t) =>
+    `<tr><td>${escapeHtml(t.date)}</td><td>${escapeHtml(t.transaction_name)}</td>` +
+    `<td class="num">${fmt(t.amount)}</td><td>${escapeHtml(t.category)}</td>` +
+    `<td>${escapeHtml(t.account)}</td><td>${escapeHtml(t.card_name)}</td></tr>`
+  ).join("");
+}
+
+// ------------------------------------------------------------- svg charts ---
+function drawDonut(id, entries) {
+  const total = entries.reduce((s, e) => s + e[1], 0) || 1;
+  const r = 70, c = 2 * Math.PI * r;
+  let offset = 0;
+  const arcs = entries.map((e, i) => {
+    const frac = e[1] / total;
+    const dash = `${frac * c} ${c}`;
+    const el = `<circle cx="90" cy="90" r="${r}" fill="none" stroke="${PALETTE[i % PALETTE.length]}" stroke-width="26" stroke-dasharray="${dash}" stroke-dashoffset="${-offset * c}" transform="rotate(-90 90 90)"/>`;
+    offset += frac;
+    return el;
+  }).join("");
+  const legend = entries.map((e, i) =>
+    `<div><span class="swatch" style="background:${PALETTE[i % PALETTE.length]}"></span>` +
+    `${escapeHtml(e[0])} · ${fmt(e[1])} (${((e[1] / total) * 100).toFixed(1)}%)</div>`
+  ).join("");
+  $(id).innerHTML = `<svg viewBox="0 0 180 180" width="180" height="180">${arcs}</svg><div class="legend">${legend}</div>`;
+}
+
+function drawStacked(id, entries) {
+  const total = entries.reduce((s, e) => s + e[1], 0) || 1;
+  let left = 0;
+  const bars = entries.map((e, i) => {
+    const pct = (e[1] / total) * 100;
+    const seg = `<div style="width:${pct}%;background:${PALETTE[i % PALETTE.length]};height:26px;display:flex;align-items:center;justify-content:center;color:#0b1018;font-size:11px;font-weight:600">${pct.toFixed(1)}%</div>`;
+    left += pct;
+    return seg;
+  }).join("");
+  const legend = entries.map((e, i) =>
+    `<div><span class="swatch" style="background:${PALETTE[i % PALETTE.length]}"></span>${escapeHtml(e[0])} · ${fmt(e[1])}</div>`
+  ).join("");
+  $(id).innerHTML = `<div style="display:flex;border-radius:8px;overflow:hidden;border:1px solid var(--line)">${bars}</div><div class="legend">${legend}</div>`;
+}
+
+$("start").onclick = startJob;
+$("cancel").onclick = cancelJob;
+loadConfig().then(refreshJobs);
+</script>
+</body>
+</html>
