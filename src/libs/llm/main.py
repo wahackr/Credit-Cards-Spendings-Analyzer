@@ -1,9 +1,15 @@
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Mapping
+from urllib.parse import urlsplit
 
+from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
+
+# Repo-root .env supplies defaults; explicit environment variables take precedence.
+load_dotenv(Path(__file__).resolve().parents[3] / ".env", override=False)
 
 GEMINI = "gemini"
 OPENAI_COMPATIBLE = "openai-compatible"
@@ -50,6 +56,7 @@ def load_llm_config(
     *,
     provider: str | None = None,
     model: str | None = None,
+    base_url: str | None = None,
 ) -> LLMConfig:
     """Load and validate provider-specific configuration."""
     env = os.environ if environ is None else environ
@@ -68,13 +75,21 @@ def load_llm_config(
             raise ValueError("GEMINI_MODEL must not be empty when LLM_PROVIDER=gemini.")
         return LLMConfig(selected_provider, selected_model, api_key)
 
-    base_url = env.get("OPENAI_BASE_URL", "").strip()
+    base_url = (env.get("OPENAI_BASE_URL", "") if base_url is None else base_url).strip()
     api_key = env.get("OPENAI_API_KEY", "not-required").strip()
     selected_model = (model or env.get("OPENAI_MODEL", "")).strip()
     if not base_url:
         raise ValueError(
             "OPENAI_BASE_URL is required when LLM_PROVIDER=openai-compatible."
         )
+    try:
+        endpoint = urlsplit(base_url)
+        valid_endpoint = endpoint.scheme in {"http", "https"} and bool(endpoint.hostname)
+        endpoint.port  # Validate the port when present.
+    except ValueError:
+        valid_endpoint = False
+    if not valid_endpoint:
+        raise ValueError("OpenAI endpoint must be an absolute http:// or https:// URL.")
     if not selected_model:
         raise ValueError(
             "OPENAI_MODEL is required when LLM_PROVIDER=openai-compatible."

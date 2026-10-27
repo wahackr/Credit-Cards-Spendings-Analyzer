@@ -4,7 +4,7 @@ services:
   credit-card-analyzer:
     build: .
     ports:
-      - "8501:8501"
+      - "8000:8000"
     environment:
       - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -17,7 +17,7 @@ services:
       - MAX_CONCURRENT_STATEMENTS=${MAX_CONCURRENT_STATEMENTS:-2}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3

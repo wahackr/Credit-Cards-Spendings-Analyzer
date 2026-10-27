@@ -21,12 +21,12 @@ RUN pip install uv && uv sync --frozen --no-install-project
 # Copy project files
 COPY . .
 
-# Expose Streamlit port
-EXPOSE 8501
+# Expose API port
+EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8501/healthz || exit 1
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)"
 
 # Run the application
-CMD ["uv", "run", "streamlit", "run", "src/app.py", "--server.address", "0.0.0.0", "--server.port", "8501"]
+CMD ["uv", "run", "uvicorn", "webapp.app:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8000"]
