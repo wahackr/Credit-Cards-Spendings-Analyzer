@@ -4,8 +4,31 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>💳 Credit Card Statement Analyzer</title>
+<script>
+// Restore the saved theme before painting the page.
+try {
+  if (localStorage.getItem("theme") === "dark") document.documentElement.dataset.theme = "dark";
+} catch { /* Use the light default when storage is unavailable. */ }
+</script>
 <style>
   :root {
+    color-scheme: light;
+    --bg: #f4f7fb;
+    --panel: #ffffff;
+    --panel-2: #f1f5f9;
+    --line: #cbd5e1;
+    --text: #172033;
+    --muted: #526176;
+    --accent: #2563eb;
+    --ok: #147d4b;
+    --warn: #946200;
+    --bad: #c53030;
+    --drop-hover: #eaf1ff;
+    --log-bg: #f8fafc;
+    --radius: 12px;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
     --bg: #0f1420;
     --panel: #171e2c;
     --panel-2: #1e2739;
@@ -16,7 +39,8 @@
     --ok: #3ecf8e;
     --warn: #f5a623;
     --bad: #ff6b6b;
-    --radius: 12px;
+    --drop-hover: #1b2436;
+    --log-bg: #0b1018;
   }
   * { box-sizing: border-box; }
   body {
@@ -29,6 +53,8 @@
   }
   header h1 { margin: 0; font-size: 20px; }
   header p { margin: 0; color: var(--muted); font-size: 13px; }
+  #theme-toggle { margin-left: auto; white-space: nowrap; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
   main { padding: 24px 28px 60px; max-width: 1180px; margin: 0 auto; }
   .grid { display: grid; grid-template-columns: 340px 1fr; gap: 22px; align-items: start; }
   @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
@@ -48,11 +74,13 @@
     border: 1.5px dashed var(--line); border-radius: var(--radius); padding: 22px;
     text-align: center; color: var(--muted); cursor: pointer; transition: .15s;
   }
-  .drop:hover, .drop.over { border-color: var(--accent); color: var(--text); background: #1b2436; }
+  .drop:hover, .drop.over { border-color: var(--accent); color: var(--text); background: var(--drop-hover); }
   .drop strong { color: var(--text); }
   ul.files { list-style: none; padding: 0; margin: 12px 0 0; font-size: 13px; }
-  ul.files li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; }
-  ul.files li span.size { color: var(--muted); }
+  ul.files li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
+  ul.files li > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ul.files li span.size { color: var(--muted); flex-shrink: 0; }
+  ul.files li button { padding: 2px 8px; font-size: 12px; }
   button {
     font: inherit; border: 1px solid var(--line); background: var(--panel-2);
     color: var(--text); padding: 9px 14px; border-radius: 8px; cursor: pointer;
@@ -75,7 +103,7 @@
   .pill.empty, .pill.cancelled, .pill.cancelling { color: var(--warn); border-color: var(--warn); }
   .detail { color: var(--muted); font-size: 12px; max-width: 45%; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   pre.log {
-    background: #0b1018; border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+    background: var(--log-bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px;
     font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace; max-height: 190px; overflow: auto; margin: 12px 0 0;
   }
   .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
@@ -108,6 +136,7 @@
 <header>
   <h1>💳 Credit Card Statement Analyzer</h1>
   <p>PDF statements → structured transactions, processed as background jobs.</p>
+  <button type="button" id="theme-toggle" aria-label="Dark theme" aria-pressed="false">Dark theme</button>
 </header>
 
 <main>
@@ -120,16 +149,26 @@
         <select id="provider"></select>
         <label for="model">Model</label>
         <input type="text" id="model" />
+        <div id="base-url-field" hidden>
+          <label for="base-url">OpenAI-compatible endpoint</label>
+          <input type="text" id="base-url" placeholder="http://localhost:8080/v1" />
+          <div class="hint">API base URL, including /v1. Used for new analysis jobs.</div>
+        </div>
         <div class="hint" id="endpoint"></div>
       </section>
 
       <section class="panel">
         <h2>📄 Statements</h2>
         <div class="drop" id="drop">
-          <strong>Drop PDFs here</strong> or click to browse
-          <div class="hint">Multiple files are queued and processed one at a time.</div>
+          <strong>Drop PDFs or folders here</strong> or click to browse
+          <div class="hint">Files from several folders can be combined into one report.</div>
         </div>
         <input type="file" id="files" accept=".pdf" multiple hidden />
+        <input type="file" id="folder" webkitdirectory accept=".pdf" multiple hidden />
+        <div class="row">
+          <button id="add-folder">📁 Add Folder</button>
+          <button id="clear-files">Clear</button>
+        </div>
         <ul class="files" id="filelist"></ul>
         <div class="row">
           <button class="primary" id="start" disabled>🚀 Analyze Statements</button>
@@ -176,6 +215,18 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
+function updateThemeToggle() {
+  const dark = document.documentElement.dataset.theme === "dark";
+  $("theme-toggle").textContent = dark ? "☀️ Light theme" : "🌙 Dark theme";
+  $("theme-toggle").setAttribute("aria-pressed", String(dark));
+}
+$("theme-toggle").onclick = () => {
+  const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem("theme", theme); } catch { /* The toggle still works without storage. */ }
+  updateThemeToggle();
+};
+updateThemeToggle();
 const fmt = (n) => "HKD $" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const PALETTE = ["#4f8cff", "#3ecf8e", "#f5a623", "#ff6b6b", "#b57bff", "#2dd4bf", "#f472b6", "#a3e635", "#fb923c", "#60a5fa", "#94a3b8"];
 
@@ -213,28 +264,116 @@ function applyDefaults(cfg) {
   const provider = $("provider").value;
   const def = cfg.defaults[provider] || {};
   $("model").value = def.model || "";
-  $("endpoint").textContent = (def.base_url ? `Endpoint: ${def.base_url} · ` : "") +
+  $("base-url-field").hidden = provider !== "openai-compatible";
+  $("base-url").value = def.base_url || "";
+  $("endpoint").textContent =
     (cfg.max_workers === 1 ? "Concurrency: 1 statement at a time." : `Concurrency: ${cfg.max_workers} statements.`);
 }
 
 // ---------------------------------------------------------------- uploads ---
+const MAX_FILES = 20; // must match the server's max_files limit
+
 $("drop").addEventListener("click", () => $("files").click());
 $("files").addEventListener("change", (e) => stage(e.target.files));
+$("add-folder").addEventListener("click", () => $("folder").click());
+$("folder").addEventListener("change", (e) => stage(e.target.files));
+$("clear-files").addEventListener("click", () => {
+  selected = [];
+  $("files").value = "";
+  $("folder").value = "";
+  renderFileList();
+});
 ["dragover", "dragleave", "drop"].forEach((type) =>
   $("drop").addEventListener(type, (e) => {
     e.preventDefault();
     $("drop").classList.toggle("over", type === "dragover");
-    if (type === "drop") stage(e.dataTransfer.files);
+    if (type === "drop") dropFiles(e.dataTransfer);
   })
 );
 
+function relPath(f) {
+  return f.webkitRelativePath || f.name;
+}
+
+// Dedup key includes size + mtime so the same filename from different folders
+// (or a folder whose basename collides with a standalone file) is kept.
+function fileKey(f) {
+  return `${relPath(f)}|${f.size}|${f.lastModified}`;
+}
+
 function stage(fileList) {
-  selected = [...fileList].filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+  const incoming = [...fileList].filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+  const seen = new Set(selected.map(fileKey));
+  for (const f of incoming) {
+    if (seen.has(fileKey(f))) continue;
+    if (selected.length >= MAX_FILES) {
+      $("status").textContent = `⚠️ Only the first ${MAX_FILES} files per job are accepted.`;
+      break;
+    }
+    selected.push(f);
+    seen.add(relPath(f));
+  }
+  renderFileList();
+}
+
+async function dropFiles(dataTransfer) {
+  const items = [...(dataTransfer.items || [])];
+  const entries = items
+    .filter((it) => it.kind === "file")
+    .map((it) => (it.webkitGetAsEntry ? it.webkitGetAsEntry() : null))
+    .filter(Boolean);
+  if (!entries.length) {
+    stage(dataTransfer.files);
+    return;
+  }
+  const collected = [];
+  for (const entry of entries) {
+    collected.push(...(await readEntry(entry, "")));
+  }
+  stage(collected);
+}
+
+async function readEntry(entry, path) {
+  if (entry.isFile) {
+    const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+    try {
+      Object.defineProperty(file, "webkitRelativePath", { value: path + entry.name });
+    } catch {
+      /* read-only in some browsers; name is still usable */
+    }
+    return [file];
+  }
+  if (entry.isDirectory) {
+    const reader = entry.createReader();
+    const children = [];
+    // readEntries returns at most ~100 entries per call; drain it.
+    for (;;) {
+      const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+      if (!batch.length) break;
+      children.push(...batch);
+    }
+    const files = [];
+    for (const child of children) {
+      files.push(...(await readEntry(child, `${path}${entry.name}/`)));
+    }
+    return files;
+  }
+  return [];
+}
+
+function renderFileList() {
   const list = $("filelist");
   list.innerHTML = "";
-  selected.forEach((f) => {
+  selected.forEach((f, idx) => {
     const li = document.createElement("li");
-    li.innerHTML = `<span>${escapeHtml(f.name)}</span><span class="size">${(f.size / 1024 / 1024).toFixed(1)} MB</span>`;
+    const path = relPath(f);
+    li.innerHTML = `<span title="${escapeHtml(path)}">${escapeHtml(path)}</span>` +
+      `<span class="size">${(f.size / 1024 / 1024).toFixed(1)} MB</span>` +
+      `<button class="danger" title="Remove">✕</button>`;
+    li.querySelector("button").onclick = () => {
+      selected.splice(idx, 1);
+      renderFileList();
+    };
     list.appendChild(li);
   });
   $("start").disabled = selected.length === 0 || !$("provider").value;
@@ -247,10 +386,22 @@ function escapeHtml(s) {
 // ------------------------------------------------------------------- jobs ---
 async function startJob() {
   const form = new FormData();
-  selected.forEach((f) => form.append("files", f, f.name));
+  selected.forEach((f) => form.append("files", f, relPath(f)));
   const params = new URLSearchParams();
   if ($("provider").value) params.set("provider", $("provider").value);
   if ($("model").value) params.set("model", $("model").value);
+  if ($("provider").value === "openai-compatible") {
+    const endpoint = $("base-url").value.trim();
+    try {
+      const url = new URL(endpoint);
+      if (!["http:", "https:"].includes(url.protocol)) throw new Error();
+    } catch {
+      $("status").textContent = "Enter a valid http:// or https:// endpoint.";
+      $("base-url").focus();
+      return;
+    }
+    params.set("base_url", endpoint);
+  }
 
   $("start").disabled = true;
   $("log").hidden = false;
@@ -316,6 +467,7 @@ function renderFileLines(job) {
   job.files.forEach((f) => {
     const div = document.createElement("div");
     div.className = "fileline";
+    div.dataset.index = f.index;
     div.dataset.name = f.filename;
     div.innerHTML = `<span class="name">${escapeHtml(f.filename)}</span>` +
       `<span class="pill ${f.stage}">${f.stage}</span>` +
@@ -325,7 +477,10 @@ function renderFileLines(job) {
 }
 
 function updateFileLine(ev) {
-  const line = $("filestatus").querySelector(`[data-name="${CSS.escape(ev.filename)}"]`);
+  // Keyed by index first: filenames can repeat across folders.
+  const line = ev.index != null
+    ? $(`filestatus`).querySelector(`[data-index="${ev.index}"]`)
+    : $(`filestatus`).querySelector(`[data-name="${CSS.escape(ev.filename)}"]`);
   if (!line) return;
   const pill = line.querySelector(".pill");
   pill.className = `pill ${ev.stage}`;

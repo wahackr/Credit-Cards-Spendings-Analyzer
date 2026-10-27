@@ -87,9 +87,10 @@ class JobManager:
         files: list[tuple[str, bytes]],
         provider: str | None = None,
         model: str | None = None,
+        base_url: str | None = None,
     ) -> Job:
         """Validate configuration and queue a job; raises ValueError on bad config."""
-        llm_config = load_llm_config(provider=provider, model=model)
+        llm_config = load_llm_config(provider=provider, model=model, base_url=base_url)
         job = Job(
             id=uuid.uuid4().hex,
             provider=llm_config.provider,
@@ -163,17 +164,17 @@ class JobManager:
     def _run_item(self, job: Job, item: FileItem) -> None:
         if job.cancel_event.is_set():
             item.stage = STATUS_CANCELLED
-            self._publish(job.id, item.filename, STATUS_CANCELLED, "skipped")
+            self._publish(job.id, item.filename, STATUS_CANCELLED, "skipped", item.index)
             return
         # Global bound: at most max_workers statements across all jobs.
         self._semaphore.acquire()
         try:
             if job.cancel_event.is_set():
                 item.stage = STATUS_CANCELLED
-                self._publish(job.id, item.filename, STATUS_CANCELLED, "skipped")
+                self._publish(job.id, item.filename, STATUS_CANCELLED, "skipped", item.index)
                 return
             item.stage = "processing"
-            self._publish(job.id, item.filename, "processing")
+            self._publish(job.id, item.filename, "processing", "", item.index)
             upload = StatementUpload(item.index, item.filename, item.content)
             result = self._processor(
                 upload,
@@ -184,7 +185,7 @@ class JobManager:
         except Exception as exc:  # defensive: worker must never die silently
             item.error = str(exc)
             item.stage = "failed"
-            self._publish(job.id, item.filename, "failed", str(exc))
+            self._publish(job.id, item.filename, "failed", str(exc), item.index)
         finally:
             self._semaphore.release()
 
@@ -192,13 +193,13 @@ class JobManager:
         item = job.items[progress.index]
         item.stage = progress.stage
         item.detail = progress.detail
-        self._publish(job.id, progress.filename, progress.stage, progress.detail)
+        self._publish(job.id, progress.filename, progress.stage, progress.detail, progress.index)
 
     def _apply_result(self, job: Job, item: FileItem, result: StatementResult) -> None:
         if result.error is not None:
             item.error = str(result.error)
             item.stage = "failed"
-            self._publish(job.id, item.filename, "failed", item.error)
+            self._publish(job.id, item.filename, "failed", item.error, item.index)
             return
         item.statement = result.statement
         item.csv_rows = result.csv_rows
@@ -209,13 +210,21 @@ class JobManager:
                 item.filename,
                 "completed",
                 f"{result.statement.number_of_transactions} transactions",
+                item.index,
             )
         else:
             item.stage = "empty"
-            self._publish(job.id, item.filename, "empty", "no transactions found")
+            self._publish(job.id, item.filename, "empty", "no transactions found", item.index)
 
     # -------------------------------------------------------------- events ---
-    def _publish(self, job_id: str, filename: str, stage: str, detail: str = "") -> None:
+    def _publish(
+        self,
+        job_id: str,
+        filename: str,
+        stage: str,
+        detail: str = "",
+        index: int | None = None,
+    ) -> None:
         with self._condition:
             if job_id not in self._jobs:
                 return  # job deleted while its worker was still running
@@ -223,6 +232,7 @@ class JobManager:
             event = {
                 "seq": self._sequence,
                 "job_id": job_id,
+                "index": index,
                 "filename": filename,
                 "stage": stage,
                 "detail": detail,
@@ -277,6 +287,7 @@ class JobManager:
             "cancelled": sum(1 for i in job.items if i.stage == STATUS_CANCELLED),
             "files": [
                 {
+                    "index": item.index,
                     "filename": item.filename,
                     "stage": item.stage,
                     "detail": item.detail,

@@ -12,6 +12,7 @@ An automated tool that converts credit card PDF statements into structured CSV d
 - 💱 **Multi-Currency Support**: Handles statements with multiple currencies, prioritizing HKD
 - 🔍 **Smart Processing**: Handles multi-line transactions and DCC fees
 - ⚡ **Background Jobs**: Uploads run as long-running jobs with live progress (SSE), cancellation, and CSV download; multiple statements are processed with bounded concurrency
+- 🗂 **Multi-folder Uploads**: Combine PDFs from several folders (drag-drop folders, **Add Folder**, or repeated picks) into one analysis report
 
 ## Transaction Categories
 
@@ -98,9 +99,10 @@ API.
 
 For local development you can keep these variables in an untracked `.env` file at
 the repository root instead of exporting them in your shell. It is loaded by both
-the CLI and the web app, and its values take precedence over variables
-already exported in the environment (for example a stale `OPENAI_API_KEY` from
-your shell profile). Docker does not copy `.env` into the image; pass the
+the CLI and the web app. Variables already exported in the environment take
+precedence over `.env` values. Restart the application after changing either
+source. To use a `.env` value instead of a shell export, unset that variable in
+your shell first (for example, `unset OPENAI_API_KEY`). Docker does not copy `.env` into the image; pass the
 variables through the shell or a Compose `.env` file instead.
 
 Ollama enables thinking by default for supported models such as Qwen. Thinking
@@ -245,6 +247,19 @@ progress over Server-Sent Events, the server keeps processing statements even if
 you close the tab, and finished jobs stay available for results and CSV download
 until the server restarts.
 
+For OpenAI-compatible providers, the configuration panel includes an editable
+endpoint field prefilled from `OPENAI_BASE_URL`. Change it before starting an
+analysis to use a different server for that job. This does not change the server's
+environment or the endpoint used by other jobs.
+
+Statement staging accepts several sources in one job: drop files or whole folders,
+click to browse files, or use **Add Folder** to include a directory tree. Files
+accumulate across selections (only an exact re-add of the same file is skipped,
+up to 20 per job), so statements spread over multiple folders — including
+different files that share the same name — are combined into a single report.
+The relative path is kept as the statement label, and absolute or `..` paths are
+rejected.
+
 Web app provider behavior:
 
 - Only `GEMINI_API_KEY` set: only Gemini is listed.
@@ -256,7 +271,7 @@ Web app provider behavior:
 
 | Endpoint | Purpose |
 | --- | --- |
-| `POST /api/jobs` | `multipart/form-data` upload of PDFs (`files` field); optional `provider`/`model` query params. Returns the job. |
+| `POST /api/jobs` | `multipart/form-data` upload of PDFs (`files` field, up to 20; filenames may keep relative sub-paths from folder uploads); optional `provider`/`model`/`base_url` query params. `base_url` overrides the OpenAI-compatible endpoint for this job. Returns the job. |
 | `GET /api/jobs` / `GET /api/jobs/{id}` | List jobs or fetch one with per-file stages. |
 | `GET /api/jobs/{id}/events` | Server-Sent Events stream of progress until the job finishes. |
 | `POST /api/jobs/{id}/cancel` | Stop queued files and let running ones drain. |

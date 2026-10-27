@@ -53,7 +53,12 @@ def config() -> dict:
 
 
 @app.post("/api/jobs")
-async def create_job(request: Request, provider: str | None = None, model: str | None = None) -> dict:
+async def create_job(
+    request: Request,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+) -> dict:
     content_type = request.headers.get("content-type", "")
     if "multipart/form-data" not in content_type:
         raise HTTPException(status_code=400, detail="Upload statements as multipart/form-data.")
@@ -65,16 +70,21 @@ async def create_job(request: Request, provider: str | None = None, model: str |
 
     payloads: list[tuple[str, bytes]] = []
     for upload in files:
-        name = Path(upload.filename or "statement.pdf").name
-        if not name.lower().endswith(".pdf"):
-            raise HTTPException(status_code=400, detail=f"{name} is not a PDF.")
+        raw = (upload.filename or "statement.pdf").replace("\\", "/")
+        if not raw.lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail=f"{raw} is not a PDF.")
+        # Folder uploads arrive as relative sub-paths; reject absolute or traversal ones.
+        parts = raw.split("/")
+        if raw.startswith("/") or ".." in parts:
+            raise HTTPException(status_code=400, detail=f"{raw} has an invalid path.")
+        name = "/".join(part for part in parts if part)
         data = await upload.read(MAX_UPLOAD_BYTES + 1)
         if len(data) > MAX_UPLOAD_BYTES:
             raise HTTPException(status_code=413, detail=f"{name} exceeds the 25 MB limit.")
         payloads.append((name, data))
 
     try:
-        job = manager.create_job(payloads, provider=provider, model=model)
+        job = manager.create_job(payloads, provider=provider, model=model, base_url=base_url)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return manager.describe(job)

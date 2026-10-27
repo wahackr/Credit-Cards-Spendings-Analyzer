@@ -97,6 +97,30 @@ class JobManagerTests(unittest.TestCase):
         self.assertEqual([e["seq"] for e in events], sorted(e["seq"] for e in events))
         self.assertEqual(events[-1]["stage"], "completed")
 
+    def test_duplicate_filenames_from_different_folders(self):
+        manager = JobManager(max_workers=1, processor=fake_processor("ok"))
+        job = self._create(manager, ["bank-a/statement.pdf", "bank-b/statement.pdf"])
+        _wait(manager, job.id)
+
+        described = manager.describe(manager.get_job(job.id))
+        self.assertEqual(described["status"], "completed")
+        self.assertEqual(described["completed"], 2)
+        self.assertEqual(
+            [f["filename"] for f in described["files"]],
+            ["bank-a/statement.pdf", "bank-b/statement.pdf"],
+        )
+        self.assertEqual([f["index"] for f in described["files"]], [0, 1])
+        self.assertEqual(len(manager.transactions(manager.get_job(job.id))), 2)
+
+        events = list(manager.stream_events(job.id))
+        file_events = [e for e in events if e["filename"]]
+        self.assertEqual(
+            sorted({(e["index"], e["filename"]) for e in file_events}),
+            [(0, "bank-a/statement.pdf"), (1, "bank-b/statement.pdf")],
+        )
+        completed = [e for e in file_events if e["stage"] == "completed"]
+        self.assertEqual(sorted(e["index"] for e in completed), [0, 1])
+
     def test_cancel_skips_queued_files(self):
         gate = __import__("threading").Event()
 
