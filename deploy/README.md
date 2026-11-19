@@ -52,11 +52,9 @@ exist before that run can get past validation.)
 | `APP_HOST_PORT` | var | `8010` | `8000` is already taken on this host by Portainer |
 | `APP_ALLOW_LAN_BIND` | var | `false` | Must be `true` for any non-loopback bind |
 | `APP_MEM_LIMIT` | var | `2g` | Container memory ceiling |
-| `LLM_PROVIDER` | var | `gemini` | `gemini` or `openai-compatible` |
-| `GEMINI_MODEL` | var | `gemini-3-flash-preview` | |
-| `GEMINI_API_KEY` | **secret** | — | Required when `LLM_PROVIDER=gemini` |
-| `OPENAI_BASE_URL` | var | — | Required when `LLM_PROVIDER=openai-compatible` |
-| `OPENAI_MODEL` | var | — | Required when `LLM_PROVIDER=openai-compatible` |
+| `LLM_PROVIDER` | var | `openai-compatible` | The only supported value; `gemini` fails validation |
+| `OPENAI_BASE_URL` | var | — | Required |
+| `OPENAI_MODEL` | var | — | Required |
 | `OPENAI_API_KEY` | **secret** | `not-required` | Empty is rejected by the app; use `not-required` |
 | `OPENAI_THINKING` | var | — | Set `false` for Qwen-on-Ollama style servers |
 | `OPENAI_MAX_OUTPUT_TOKENS` | var | — | |

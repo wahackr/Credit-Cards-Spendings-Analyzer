@@ -1,11 +1,11 @@
 # Credit Card Spending Analyzer
 
-An automated tool that converts credit card PDF statements into structured CSV data by extracting their text and analyzing it with Google Gemini or an OpenAI-compatible LLM. The application extracts transaction details including dates, merchant names, amounts, categories, and more from credit card statements.
+An automated tool that converts credit card PDF statements into structured CSV data by extracting their text and analyzing it with an OpenAI-compatible LLM. The application extracts transaction details including dates, merchant names, amounts, categories, and more from credit card statements.
 
 ## Features
 
 - 📄 **PDF Text Extraction**: Converts statement PDFs to Markdown text with table columns rebuilt from word coordinates
-- 🤖 **Choice of LLM**: Uses Google Gemini or a self-hosted OpenAI-compatible model
+- 🤖 **OpenAI-compatible LLM**: Works with any self-hosted or hosted model endpoint that speaks the OpenAI Chat Completions API
 - 🚫 **Scanned-PDF Guard**: A PDF with no usable text layer is rejected before any LLM call; OCR is not supported
 - 📊 **Structured Output**: Generates clean CSV files with categorized transactions
 - 🏷️ **Auto-Categorization**: Automatically categorizes transactions (Dining, Shopping, Travel, etc.)
@@ -33,7 +33,7 @@ The analyzer automatically categorizes transactions into:
 ## Prerequisites
 
 - Python >= 3.12
-- A Google Gemini API key, or an OpenAI-compatible text-model endpoint
+- An OpenAI-compatible text-model endpoint (self-hosted or hosted)
 - PDF credit card statements
 
 ## Installation
@@ -56,29 +56,20 @@ pip install .
 
 ## LLM configuration
 
-The analyzer supports `gemini` and `openai-compatible`. Provider availability is
-determined from the provider-specific environment variables below.
+`openai-compatible` is the only supported provider: the Gemini provider was removed once
+statements reach the model as extracted text instead of page images. Provider availability
+is determined from the environment variables below.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `LLM_PROVIDER` | CLI: yes when using OpenAI-compatible; web app: no | CLI provider selection and preferred web app default. Defaults to `gemini`. |
-| `GEMINI_API_KEY` | For Gemini | Google Gemini API key. Its presence enables Gemini in the web app. |
-| `GEMINI_MODEL` | No | Gemini model name. Defaults to `gemini-3-flash-preview`. |
-| `OPENAI_BASE_URL` | For OpenAI-compatible | API base URL, normally ending in `/v1`. |
-| `OPENAI_API_KEY` | For OpenAI-compatible | API key. Defaults to `not-required`; use a placeholder for unauthenticated local servers. |
-| `OPENAI_MODEL` | For OpenAI-compatible | Model name exposed by the server. Its presence, together with `OPENAI_BASE_URL`, enables this provider in the web app. |
+| `LLM_PROVIDER` | No | Only `openai-compatible` is accepted, and it is used when the variable is omitted. The removed `gemini` value fails with an explicit error. |
+| `OPENAI_BASE_URL` | Yes | API base URL, normally ending in `/v1`. |
+| `OPENAI_API_KEY` | No | API key. Defaults to `not-required`; use a placeholder for unauthenticated local servers. |
+| `OPENAI_MODEL` | Yes | Model name exposed by the server. Its presence, together with `OPENAI_BASE_URL`, enables the provider in the web app. |
 | `OPENAI_THINKING` | No | Sends the nonstandard `think` option. Set to `false` for thinking-capable Qwen models on Ollama. Omit it for servers that do not support this option. |
 | `OPENAI_MAX_OUTPUT_TOKENS` | No | Positive integer limiting completion length. Omit it to use the server default. |
 
-### Gemini only
-
-```bash
-export LLM_PROVIDER=gemini
-export GEMINI_API_KEY=your-api-key
-export GEMINI_MODEL=gemini-3-flash-preview  # optional; this is the default
-```
-
-### OpenAI-compatible only
+### Example
 
 ```bash
 export LLM_PROVIDER=openai-compatible
@@ -106,28 +97,13 @@ can consume the model's entire context window before it finishes the required
 JSON response. Set `OPENAI_THINKING=false` for statement extraction. This option
 is Ollama-specific and is only sent when the environment variable is set.
 
-### Configure both providers
+### One provider, several servers
 
-Set both groups of provider variables when you want to switch providers in the
-web app's configuration panel:
-
-```bash
-export GEMINI_API_KEY=your-gemini-api-key
-export GEMINI_MODEL=gemini-3-flash-preview
-
-export OPENAI_BASE_URL=http://10.7.7.79:8080/v1
-export OPENAI_API_KEY=not-required
-export OPENAI_MODEL=qwen3.5:9b
-export OPENAI_THINKING=false
-
-# CLI selection and initial web app selection:
-export LLM_PROVIDER=openai-compatible
-```
-
-`LLM_PROVIDER` does not hide the other configured provider in the web app. It only
-chooses the initial selection. The configuration panel lists every provider whose
-required configuration is valid. The CLI has no provider selector, so it uses
-`LLM_PROVIDER` directly and defaults to Gemini when the variable is omitted.
+`LLM_PROVIDER` takes no value other than `openai-compatible`, so it can simply be omitted;
+the CLI uses that provider directly. The web app lists a provider only when its required
+variables are valid, so a missing `OPENAI_BASE_URL` or `OPENAI_MODEL` leaves the
+configuration panel empty. To analyze a job against a different server, edit the endpoint
+field in that panel for the job instead of configuring another provider.
 
 ### Text extraction
 
@@ -152,25 +128,15 @@ docker build -f deploy/docker/analyzer.Dockerfile -t credit-card-analyzer .
 
 2. **Run the container:**
 
-Gemini:
+`LLM_PROVIDER` may be omitted because `openai-compatible` is the default:
 
 ```bash
 docker run -p 8000:8000 \
-  -e LLM_PROVIDER="gemini" \
-  -e GEMINI_API_KEY="your-api-key-here" \
-  -e MAX_CONCURRENT_STATEMENTS=2 \
-  credit-card-analyzer
-```
-
-OpenAI-compatible:
-
-```bash
-docker run -p 8000:8000 \
-  -e LLM_PROVIDER="openai-compatible" \
   -e OPENAI_BASE_URL="http://10.7.7.79:8080/v1" \
   -e OPENAI_API_KEY="not-required" \
   -e OPENAI_MODEL="qwen3.5:9b" \
   -e OPENAI_THINKING="false" \
+  -e MAX_CONCURRENT_STATEMENTS=2 \
   credit-card-analyzer
 ```
 
@@ -186,7 +152,7 @@ Open your browser to `http://localhost:8000`
 The repository tracks `deploy/compose.yaml`; use it instead of writing your own:
 
 ```bash
-cp deploy/.env.example deploy/.env   # then put a real key in it
+cp deploy/.env.example deploy/.env   # then put your endpoint and model in it
 docker compose --env-file deploy/.env -f deploy/compose.yaml up --build -d
 ```
 
@@ -246,10 +212,8 @@ rejected.
 
 Web app provider behavior:
 
-- Only `GEMINI_API_KEY` set: only Gemini is listed.
-- Only `OPENAI_BASE_URL` and `OPENAI_MODEL` set: only OpenAI-compatible is listed.
-- Both configurations set: both are listed, and `LLM_PROVIDER` chooses the initial selection.
-- Neither configured: the app displays the missing provider settings and blocks uploads.
+- `OPENAI_BASE_URL` and `OPENAI_MODEL` set: OpenAI-compatible is listed and preselected.
+- Either one missing: the app displays the missing provider settings and blocks uploads.
 
 ### API overview
 
@@ -331,7 +295,6 @@ The analyzer generates CSV output with the following columns:
 
 - `fastapi` and `uvicorn[standard]`: web app and server
 - `langchain`: LLM framework
-- `langchain-google-genai`: Gemini integration for LangChain
 - `langchain-openai`: OpenAI-compatible integration for LangChain
 - `markitdown[pdf]`: PDF to Markdown text extraction
 - `pandas`: CSV assembly
@@ -365,6 +328,5 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Acknowledgments
 
-- Google Gemini AI for powerful document understanding
 - LangChain for LLM orchestration
 - markitdown and pdfplumber for PDF text extraction

@@ -4,7 +4,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from libs.llm.main import GEMINI, LLMConfig
+from libs.llm.main import LLMConfig, OPENAI_COMPATIBLE
 from libs.states.statement import Statement, Transaction
 from libs.tools.pdf_2_text import StatementTextError
 from libs.tools.retry import retry_transient
@@ -130,7 +130,7 @@ class StatementProcessorTests(unittest.TestCase):
                 due_date="2026-12-01",
             )
 
-        config = LLMConfig(provider=GEMINI, model="test-model", api_key="test-key")
+        config = LLMConfig(provider=OPENAI_COMPATIBLE, model="test-model", api_key="test-key")
         upload = StatementUpload(0, "bank-202611/statement.pdf", statement_pdf())
 
         with patch("libs.tools.statement_processor.read_statement", side_effect=fake_read):
@@ -148,7 +148,7 @@ class StatementProcessorTests(unittest.TestCase):
         with patch("libs.tools.statement_processor.read_statement") as read:
             result = process_statement(
                 upload,
-                LLMConfig(provider=GEMINI, model="test-model", api_key="test-key"),
+                LLMConfig(provider=OPENAI_COMPATIBLE, model="test-model", api_key="test-key"),
                 stages.append,
             )
 

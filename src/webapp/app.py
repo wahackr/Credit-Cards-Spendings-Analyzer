@@ -11,8 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from libs.llm.main import (
-    GEMINI,
-    OPENAI_COMPATIBLE,
+    SUPPORTED_PROVIDERS,
     configured_providers,
     load_llm_config,
 )
@@ -34,7 +33,7 @@ def health() -> dict:
 def config() -> dict:
     available, errors = configured_providers()
     defaults = {}
-    for provider in (GEMINI, OPENAI_COMPATIBLE):
+    for provider in SUPPORTED_PROVIDERS:
         try:
             cfg = load_llm_config(provider=provider)
         except ValueError:

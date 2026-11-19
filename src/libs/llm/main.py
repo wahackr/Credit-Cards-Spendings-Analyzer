@@ -5,15 +5,19 @@ from typing import Mapping
 from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 # Repo-root .env supplies defaults; explicit environment variables take precedence.
 load_dotenv(Path(__file__).resolve().parents[3] / ".env", override=False)
 
-GEMINI = "gemini"
 OPENAI_COMPATIBLE = "openai-compatible"
-SUPPORTED_PROVIDERS = (GEMINI, OPENAI_COMPATIBLE)
+SUPPORTED_PROVIDERS = (OPENAI_COMPATIBLE,)
+REMOVED_PROVIDERS = {
+    "gemini": (
+        "Gemini support was removed when statements switched to extracted text; "
+        "set LLM_PROVIDER=openai-compatible with OPENAI_BASE_URL and OPENAI_MODEL."
+    )
+}
 
 
 @dataclass(frozen=True)
@@ -60,20 +64,14 @@ def load_llm_config(
 ) -> LLMConfig:
     """Load and validate provider-specific configuration."""
     env = os.environ if environ is None else environ
-    selected_provider = (provider or env.get("LLM_PROVIDER", GEMINI)).strip().lower()
+    selected_provider = (provider or env.get("LLM_PROVIDER", OPENAI_COMPATIBLE)).strip().lower()
+
+    if selected_provider in REMOVED_PROVIDERS:
+        raise ValueError(REMOVED_PROVIDERS[selected_provider])
 
     if selected_provider not in SUPPORTED_PROVIDERS:
         choices = ", ".join(SUPPORTED_PROVIDERS)
         raise ValueError(f"Unsupported LLM_PROVIDER '{selected_provider}'. Choose one of: {choices}.")
-
-    if selected_provider == GEMINI:
-        api_key = env.get("GEMINI_API_KEY", "").strip()
-        selected_model = (model or env.get("GEMINI_MODEL", "gemini-3-flash-preview")).strip()
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY is required when LLM_PROVIDER=gemini.")
-        if not selected_model:
-            raise ValueError("GEMINI_MODEL must not be empty when LLM_PROVIDER=gemini.")
-        return LLMConfig(selected_provider, selected_model, api_key)
 
     base_url = (env.get("OPENAI_BASE_URL", "") if base_url is None else base_url).strip()
     api_key = env.get("OPENAI_API_KEY", "not-required").strip()
@@ -126,8 +124,6 @@ def configured_providers(
 
 
 def create_chat_model(config: LLMConfig):
-    if config.provider == GEMINI:
-        return ChatGoogleGenerativeAI(api_key=config.api_key, model=config.model)
     if config.provider == OPENAI_COMPATIBLE:
         extra_body = (
             {"think": config.thinking} if config.thinking is not None else None
