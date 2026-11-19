@@ -149,7 +149,7 @@ content because file-upload APIs are not part of the common Chat Completions API
 
 1. **Build the Docker image:**
 ```bash
-docker build -t credit-card-analyzer .
+docker build -f deploy/docker/analyzer.Dockerfile -t credit-card-analyzer .
 ```
 
 2. **Run the container:**
@@ -185,35 +185,21 @@ Open your browser to `http://localhost:8000`
 
 ### Docker Compose (Recommended)
 
-Create a `docker-compose.yml` file:
+The repository tracks `deploy/compose.yaml`; use it instead of writing your own:
 
-```yaml
-version: '3.8'
-services:
-  app:
-    build: .
-    ports:
-      - "8000:8000"
-    environment:
-      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3-flash-preview}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-not-required}
-      - OPENAI_MODEL=${OPENAI_MODEL}
-      - OPENAI_THINKING=${OPENAI_THINKING}
-      - OPENAI_MAX_OUTPUT_TOKENS=${OPENAI_MAX_OUTPUT_TOKENS}
-      - MAX_CONCURRENT_STATEMENTS=${MAX_CONCURRENT_STATEMENTS:-2}
-    restart: unless-stopped
-```
-
-Then run:
 ```bash
-docker-compose up -d
+cp deploy/.env.example deploy/.env   # then put a real key in it
+docker compose --env-file deploy/.env -f deploy/compose.yaml up --build -d
 ```
 
-Set the desired variables in your shell or a Compose `.env` file before starting
-the service. Variables for an unused provider may remain unset.
+Set the desired variables in that file or in your shell before starting the service.
+Variables for an unused provider may remain unset. The stack publishes
+`${APP_BIND_ADDRESS:-127.0.0.1}:${APP_HOST_PORT:-8010}`, so the app is reachable at
+`http://localhost:8010` by default — loopback only, because the API is unauthenticated.
+
+Continuous integration and a self-hosted deployment pipeline live in
+`.github/workflows`; see [deploy/README.md](deploy/README.md) for the runner registration,
+the GitHub environment variables and secrets, and the bind-address guard.
 
 ## Local Development
 
