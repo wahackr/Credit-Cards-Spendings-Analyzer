@@ -31,6 +31,9 @@ jobs:
       run:
         shell: bash
     env:
+      # Fixed in code, not a mutable GitHub variable: a deploy target should not be
+      # something the dashboard can retarget. The runner's account must have this context.
+      DOCKER_CONTEXT: dev
       COMPOSE_PROJECT_NAME: ${{ vars.COMPOSE_PROJECT_NAME || 'credit-card-analyzer-dev' }}
       TZ: ${{ vars.TZ || 'Asia/Hong_Kong' }}
       APP_BIND_ADDRESS: ${{ vars.APP_BIND_ADDRESS || '127.0.0.1' }}

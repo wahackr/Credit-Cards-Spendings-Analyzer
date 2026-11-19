@@ -197,9 +197,10 @@ Variables for an unused provider may remain unset. The stack publishes
 `${APP_BIND_ADDRESS:-127.0.0.1}:${APP_HOST_PORT:-8010}`, so the app is reachable at
 `http://localhost:8010` by default — loopback only, because the API is unauthenticated.
 
-Continuous integration and a self-hosted deployment pipeline live in
-`.github/workflows`; see [deploy/README.md](deploy/README.md) for the runner registration,
-the GitHub environment variables and secrets, and the bind-address guard.
+Continuous integration and self-hosted deployment pipelines live in `.github/workflows`:
+`development` deploys to the `dev` Docker context, `master` to the `prod` context. See
+[deploy/README.md](deploy/README.md) for the runner registration, the `dev`/`prod` environment
+variables and secrets, and the bind-address guard.
 
 ## Local Development
 
