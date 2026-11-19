@@ -31,6 +31,9 @@ jobs:
       run:
         shell: bash
     env:
+      # Fixed in code, not a mutable GitHub variable: a deploy target should not be
+      # something the dashboard can retarget. The runner's account must have this context.
+      DOCKER_CONTEXT: dev
       COMPOSE_PROJECT_NAME: ${{ vars.COMPOSE_PROJECT_NAME || 'credit-card-analyzer-dev' }}
       TZ: ${{ vars.TZ || 'Asia/Hong_Kong' }}
       APP_BIND_ADDRESS: ${{ vars.APP_BIND_ADDRESS || '127.0.0.1' }}
@@ -64,14 +67,10 @@ jobs:
 
       - name: Validate deployment configuration
         if: steps.current.outputs.deploy == 'true'
-        env:
-          DOCKER_CONTEXT: ${{ vars.DOCKER_CONTEXT }}
         run: bash deploy/tools/deploy.sh validate
 
       - name: Build application image
         if: steps.current.outputs.deploy == 'true'
-        env:
-          DOCKER_CONTEXT: ${{ vars.DOCKER_CONTEXT }}
         run: bash deploy/tools/deploy.sh build
 
       - name: Recheck branch before deployment
@@ -85,6 +84,4 @@ jobs:
 
       - name: Deploy and check readiness
         if: steps.ready.outputs.deploy == 'true'
-        env:
-          DOCKER_CONTEXT: ${{ vars.DOCKER_CONTEXT }}
         run: bash deploy/tools/deploy.sh deploy
