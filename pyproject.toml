@@ -17,3 +17,14 @@ dependencies = [
     "python-multipart>=0.0.9",
     "uvicorn[standard]>=0.32.0",
 ]
+
+[dependency-groups]
+dev = [
+    "flake8>=7.5.0",
+    "pytest>=9.2.0",
+]
+
+# src/ holds the importable packages, so tests need it on the path explicitly.
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]
