@@ -10,8 +10,8 @@ WORKDIR /app
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install uv and dependencies
-RUN pip install uv && uv sync --frozen --no-install-project
+# Install uv and dependencies (--no-dev keeps pytest and flake8 out of the runtime image)
+RUN pip install uv && uv sync --frozen --no-install-project --no-dev
 
 # Copy project files
 COPY . .

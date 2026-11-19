@@ -48,8 +48,9 @@ Thumbs.db
 .git/
 .gitignore
 
-# Docker
-Dockerfile
+# Docker (the Dockerfile itself is read from disk, not from the build context)
+deploy/
+.github/
 .dockerignore
 
 # Logs
