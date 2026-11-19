@@ -2,15 +2,21 @@ import ssl
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
+from libs.llm.main import GEMINI, LLMConfig
+from libs.states.statement import Statement, Transaction
+from libs.tools.pdf_2_text import StatementTextError
 from libs.tools.retry import retry_transient
 from libs.tools.statement_processor import (
     StatementProgress,
     StatementResult,
     StatementUpload,
     get_max_concurrent_statements,
+    process_statement,
     process_statements_concurrently,
 )
+from pdf_fixture import scanned_pdf, statement_pdf
 
 
 class StatementProcessorTests(unittest.TestCase):
@@ -100,6 +106,56 @@ class StatementProcessorTests(unittest.TestCase):
             StatementResult(1, "empty.pdf", statement=object(), csv_rows=""),
         ]
         self.assertFalse(any(result.csv_rows.strip() for result in results))
+
+    def test_statement_text_is_extracted_before_the_llm_sees_anything(self):
+        stages = []
+        analyzed = []
+
+        def fake_read(_config, statement_text):
+            analyzed.append(statement_text)
+            return Statement(
+                transactions=[
+                    Transaction(
+                        date="2026-11-02",
+                        transaction_name="APPLE PAYSUBSCR PSE *IPHONE",
+                        amount=1198.00,
+                        category="Shopping",
+                        account="Personal",
+                        card_name="World Card",
+                    )
+                ],
+                card_name="World Card",
+                total_spending=1198.00,
+                number_of_transactions=1,
+                due_date="2026-12-01",
+            )
+
+        config = LLMConfig(provider=GEMINI, model="test-model", api_key="test-key")
+        upload = StatementUpload(0, "bank-202611/statement.pdf", statement_pdf())
+
+        with patch("libs.tools.statement_processor.read_statement", side_effect=fake_read):
+            result = process_statement(upload, config, stages.append)
+
+        self.assertIsNone(result.error)
+        self.assertEqual([event.stage for event in stages], ["extracting", "analyzing"])
+        self.assertIn("1,198.00", analyzed[0])
+        self.assertIn("1198.0", result.csv_rows)
+
+    def test_scanned_statement_fails_without_calling_the_llm(self):
+        stages = []
+        upload = StatementUpload(1, "scan.pdf", scanned_pdf())
+
+        with patch("libs.tools.statement_processor.read_statement") as read:
+            result = process_statement(
+                upload,
+                LLMConfig(provider=GEMINI, model="test-model", api_key="test-key"),
+                stages.append,
+            )
+
+        read.assert_not_called()
+        self.assertIsInstance(result.error, StatementTextError)
+        self.assertEqual([event.stage for event in stages], ["extracting"])
+        self.assertIn("scan.pdf", str(result.error))
 
     def test_retries_transient_errors_with_exponential_backoff(self):
         attempts = 0
