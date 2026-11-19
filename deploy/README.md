@@ -1,14 +1,19 @@
 # Deployment
 
-Two pipelines, on purpose different machines:
+Three pipelines, on purpose different machines and different Docker daemons:
 
-| Workflow | Trigger | Runs on | Does |
-| --- | --- | --- | --- |
-| `.github/workflows/test.yml` | push to `development`, any PR | GitHub-hosted `ubuntu-latest` | `node --test` on the deploy tooling, `pytest`, `flake8`, image build |
-| `.github/workflows/deploy-development.yml` | push to `development` (paths-filtered), `workflow_dispatch` | your self-hosted runner | validate config → `compose build` → `compose up -d --wait` |
+| Workflow | Trigger | Docker context | Runs on | Does |
+| --- | --- | --- | --- | --- |
+| `.github/workflows/test.yml` | push to `development`, any PR | — | GitHub-hosted `ubuntu-latest` | `node --test` on the deploy tooling, `pytest`, `flake8`, image build |
+| `.github/workflows/deploy-development.yml` | push to `development` (paths-filtered), `workflow_dispatch` | `dev` | your self-hosted runner | validate config → `compose build` → `compose up -d --wait` |
+| `.github/workflows/deploy-production.yml` | push to `master` (paths-filtered), `workflow_dispatch` | `prod` | your self-hosted runner | the same three stages against the prod daemon |
 
 CI never runs on the self-hosted runner: a PR from a fork would execute untrusted code on
 the same machine that holds the LLM keys and the deployed stack.
+
+Each deploy job pins its Docker context in the workflow file (`DOCKER_CONTEXT: dev` /
+`prod`), so nothing selects a daemon by inference and no GitHub variable can retarget a
+deploy from the dashboard. `deploy.sh` honours exactly what it is handed.
 
 ## One-time setup
 
@@ -38,19 +43,24 @@ default `self-hosted` label set.
 A hand-run `./run.sh` dies on reboot, on logout, and when the runner self-updates. To keep it
 up, use the bundled service wrapper (`./svc.sh install && ./svc.sh start`, systemd).
 
-### 2. Create the `dev` environment and fill in its settings
+### 2. Create the `dev` and `prod` environments and fill in their settings
 
-**Settings → Environments → New environment → `dev`**, then add the variables and secrets.
-(The environment is also created implicitly on the first deploy run — but the values have to
-exist before that run can get past validation.)
+**Settings → Environments → New environment**, then add the variables and secrets. Each
+environment carries its own copy: `dev` is read by the `development` job, `prod` by the
+`master` job, and neither inherits the other's keys. (An environment is also created
+implicitly on the first deploy run — but the values have to exist before that run can get
+past validation.) For `prod`, also add a **required reviewer** under *Deployment
+protection rules*: it is the only gate between a merge to `master` and a public deploy.
 
-| Name | Kind | Default if unset | Notes |
+Defaults below are the workflow's fallbacks; a GitHub variable of the same name overrides it.
+
+| Name | Kind | Default (dev / prod) | Notes |
 | --- | --- | --- | --- |
-| `COMPOSE_PROJECT_NAME` | var | `credit-card-analyzer-dev` | Compose project, container names, image tag |
+| `COMPOSE_PROJECT_NAME` | var | `credit-card-analyzer-dev` / `-prod` | Compose project, container names, image tag |
 | `TZ` | var | `Asia/Hong_Kong` | |
-| `APP_BIND_ADDRESS` | var | `127.0.0.1` | See the bind rules below |
-| `APP_HOST_PORT` | var | `8010` | `8000` is already taken on this host by Portainer |
-| `APP_ALLOW_LAN_BIND` | var | `false` | Must be `true` for any non-loopback bind |
+| `APP_BIND_ADDRESS` | var | `127.0.0.1` / `0.0.0.0` | See the bind rules below |
+| `APP_HOST_PORT` | var | `8010` / `8000` | `8000` is Portainer's on this host, hence dev's `8010` |
+| `APP_ALLOW_LAN_BIND` | var | `false` / `true` | Pre-approved in prod so its `0.0.0.0` bind validates |
 | `APP_MEM_LIMIT` | var | `2g` | Container memory ceiling |
 | `LLM_PROVIDER` | var | `openai-compatible` | The only supported value; `gemini` fails validation |
 | `OPENAI_BASE_URL` | var | — | Required |
@@ -61,14 +71,36 @@ exist before that run can get past validation.)
 | `MAX_CONCURRENT_STATEMENTS` | var | `2` | Each statement buffers up to 25 MB |
 | `LLM_DEBUG` | var | `false` | See the log warning below |
 
-Only the names in that table reach the deploy step: an unset variable is invisible to
-`deploy.sh`, so a typo in a GitHub variable name shows up as a missing key, not a wrong value.
+### 3. Make sure the runner's account can see the `dev` and `prod` contexts
 
-### 3. Merge to `development`
+The deploy jobs pass `--context dev` and `--context prod`, so those two names must exist for
+the account that runs the runner. Contexts are per-user (`~/.docker/contexts/` and
+`~/.docker/config.json`), so a runner running as a different user — or a rootless setup —
+sees a different set than your login shell:
 
-`deploy.sh validate` fails fast on `CHANGE_ME` placeholders, a missing provider credential, a
-malformed port, or a routable bind without `APP_ALLOW_LAN_BIND`. Then build, then
-`up -d --no-build --wait --wait-timeout 180`.
+```bash
+docker context ls                # as the user that runs run.sh / the runner service
+docker --context prod info       # proves that endpoint is reachable and authorised
+```
+
+A missing or misspelled context fails at `validate` with `context "prod": context not
+found`, before any image is built; `validate` also prints the context it selected, so every
+run states which daemon it targeted. `APP_BIND_ADDRESS` and `APP_HOST_PORT` apply to the
+**daemon** that context selects, not to the runner's machine — on a remote context, a
+`127.0.0.1` bind means that host's loopback, reachable through a reverse proxy or an SSH
+tunnel there.
+
+### 4. Merge
+
+Push to `development` for the `dev` stack, to `master` for the `prod` stack. Note that
+`master` is currently far behind `development`, so the first `master` merge is a large one —
+and the prod job only exists once this branch lands there, since a workflow must be present
+on the branch that is pushed.
+
+`deploy.sh validate` checks that the selected Docker daemon is reachable before building.
+It also checks for `CHANGE_ME` placeholders, a missing provider credential, a malformed port,
+or a routable bind without `APP_ALLOW_LAN_BIND` (prod sets that to `true` in the workflow).
+Then build, then `up -d --no-build --wait --wait-timeout 180`.
 
 What that catches is a *missing* key, not a *wrong* one: the app starts and passes its
 healthcheck regardless of the credential's validity, so a typo'd key still deploys green and
@@ -83,6 +115,11 @@ run shows its last 40 log lines.
   attacker can point your server at their own LLM endpoint. Binding the loopback address keeps
   that to your machine. A non-loopback `APP_BIND_ADDRESS` fails validation until
   `APP_ALLOW_LAN_BIND=true` says you meant it.
+- **Prod is published on `0.0.0.0:8000` by default, with that gate already approved** in
+  `deploy-production.yml`. Anyone who can route to the prod daemon's host can upload
+  statements, spend the quota, and try to steer `base_url`. Put a reverse proxy with access
+  control in front of it, or override `APP_BIND_ADDRESS` for that environment until there is
+  authentication.
 - **`LLM_DEBUG=true` prints raw card data** — every statement's extracted text and the model's
   reply — to the container log, and `deploy.sh` echoes recent container logs into the Actions
   log when a deploy fails. Turn it on only while debugging, and only on a private repo.
@@ -93,44 +130,51 @@ run shows its last 40 log lines.
 
 ```bash
 cp deploy/.env.example deploy/.env     # then edit; deploy/.env is git-ignored
-bash deploy/tools/deploy.sh validate
-bash deploy/tools/deploy.sh build
-env $(grep -v '^#' deploy/.env | xargs) bash deploy/tools/deploy.sh deploy
+(
+  set -a
+  source deploy/.env
+  set +a
+  export DOCKER_CONTEXT=dev             # prod for the production stack; unset means "default"
+  bash deploy/tools/deploy.sh validate &&
+    bash deploy/tools/deploy.sh build &&
+    bash deploy/tools/deploy.sh deploy
+)
 ```
 
-`deploy.sh` always calls Compose as `docker compose --env-file /dev/null -f deploy/compose.yaml`
-with `DOCKER_HOST` pinned to the local socket and any inherited `DOCKER_CONTEXT`/TLS variables
-cleared — so a stale `.env` or a stray Docker context on the runner can never change what gets
-deployed. For an interactive run, be explicit instead:
+`deploy.sh` passes the chosen context to Docker and uses `--env-file /dev/null` for Compose.
+For direct Compose commands, use the same context and project settings as the deployment.
+For a GitHub deployment, set `COMPOSE_PROJECT_NAME` in `deploy/.env` to the environment's
+project name if you changed it.
 
 ```bash
-docker compose --env-file deploy/.env -f deploy/compose.yaml up --build
-docker compose --env-file deploy/.env -f deploy/compose.yaml logs -f
+docker_context=dev                    # prod for the production stack
+compose=(docker --context "$docker_context" compose --env-file deploy/.env -f deploy/compose.yaml)
+"${compose[@]}" up --build
+"${compose[@]}" logs -f
 ```
 
 Escapes when a rollout misbehaves:
 
 ```bash
-docker compose -f deploy/compose.yaml ps -a          # health, restart count
-docker compose -f deploy/compose.yaml logs --tail 100
-docker compose -f deploy/compose.yaml down           # stop the stack
+"${compose[@]}" ps -a          # health, restart count
+"${compose[@]}" logs --tail 100
+"${compose[@]}" down           # stop the stack
 ```
-
-Those resolve the project name from the compose file's default; export
-`COMPOSE_PROJECT_NAME` first if the deployment runs under a different one.
 
 ## Things that will surprise you
 
 - **A green deploy does not mean the LLM works.** `/healthz` returns `{"status":"ok"}` with no
   provider configured, so the healthcheck can never catch a bad key. That is why `deploy.sh`
   checks the provider's credential before building anything. To confirm the app can actually
-  analyze: `curl -s "http://127.0.0.1:${APP_HOST_PORT:-8010}/api/config"` — `providers` should
-  list the one you configured, `errors` should be empty.
+  analyze: `curl -s "http://127.0.0.1:<APP_HOST_PORT>/api/config"` — `8010` on dev, `8000` on
+  prod, and run it where the selected daemon runs — `providers` should list the one you
+  configured, `errors` should be empty.
 - **Rolling the container clears in-flight jobs.** Job state and uploads are in memory only.
 - **Superseded pushes are skipped, not stacked.** `deploy/tools/deployment-current.cjs` compares
-  the run's SHA to `development`'s head and exits the job early if newer relevant code already
-  landed (documentation-only commits still deploy). One runner, no five-build pile-up. If you
-  change the `paths:` filter in the workflow, change the list in that file too — they must agree.
+  the run's SHA to its branch's head (`development` or `master` — each workflow passes
+  `branch:` explicitly) and exits the job early if newer relevant code already landed
+  (documentation-only commits still deploy). One runner, no five-build pile-up. If you change
+  the `paths:` filter in a workflow, change the list in that file too — they must agree.
 - **Python drift:** `.python-version` says 3.13, `deploy/docker/analyzer.Dockerfile` builds on
   `python:3.12-slim`, and CI tests 3.12 to match what ships. Reconcile them in one commit.
 - **The first Compose run under the new `name:` is a new project.** A stack you started earlier
@@ -141,6 +185,9 @@ Those resolve the project name from the compose file's default; export
 
 ## Follow-ups worth their own issues
 
-- No auth on `/api/*` (`deploy/README.md` above is the mitigation, not the fix).
+- No auth on `/api/*` (everything above is mitigation, not the fix) — prod's `0.0.0.0` bind
+  makes this the one worth filing first.
 - Non-root user inside the image, kept separate from this move so the first deploy is a clean diff.
-- A `master`/production twin of the deploy job once this repo has one.
+- No rollback target: every build is tagged `<project>-analyzer:latest`, so reverting a prod
+  deploy means rebuilding the older commit rather than re-pointing a saved tag.
+- `master` trails `development` by a wide margin, so the first push there is a large merge.
