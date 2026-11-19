@@ -1,13 +1,11 @@
 import os
-import tempfile
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
-from pathlib import Path
 from queue import Empty, SimpleQueue
 from typing import Callable, Iterator, Sequence
 
 from libs.llm.main import LLMConfig
-from libs.tools.pdf_2_image import convert_pdf_to_images
+from libs.tools.pdf_2_text import extract_statement_text
 from libs.tools.retry import retry_transient
 from libs.tools.state_2_csv import statement_to_csv
 from libs.tools.statement_reader import read_statement
@@ -61,40 +59,42 @@ def process_statement(
     llm_config: LLMConfig,
     report_progress: Callable[[StatementProgress], None],
 ) -> StatementResult:
-    """Process one upload entirely within an isolated temporary directory."""
+    """Extract statement text from the PDF bytes, then analyze it with the LLM."""
     try:
-        with tempfile.TemporaryDirectory(prefix=f"statement-{upload.index}-") as temp_dir:
-            report_progress(StatementProgress(upload.index, upload.filename, "converting"))
-            safe_filename = Path(upload.filename).name or f"statement-{upload.index}.pdf"
-            pdf_path = Path(temp_dir) / safe_filename
-            pdf_path.write_bytes(upload.content)
-            images_dir = Path(temp_dir) / "images"
-            images_dir.mkdir()
-            image_paths = convert_pdf_to_images(str(pdf_path), str(images_dir), fmt="png")
-            report_progress(StatementProgress(upload.index, upload.filename, "analyzing"))
-            statement = retry_transient(
-                lambda: read_statement(llm_config, image_paths),
-                on_retry=lambda attempt, error, delay: report_progress(
-                    StatementProgress(
-                        upload.index,
-                        upload.filename,
-                        "retrying",
-                        f"attempt {attempt + 1} in {delay:g}s: {error}",
-                    )
-                ),
+        report_progress(StatementProgress(upload.index, upload.filename, "extracting"))
+        text = extract_statement_text(upload.content, filename=upload.filename)
+        report_progress(
+            StatementProgress(
+                upload.index,
+                upload.filename,
+                "analyzing",
+                f"{text.amount_tokens} amounts, {text.table_rows} table rows, "
+                f"{text.char_count} characters",
             )
-            if not is_populated_statement(statement):
-                return StatementResult(
-                    index=upload.index,
-                    filename=upload.filename,
-                    statement=statement,
+        )
+        statement = retry_transient(
+            lambda: read_statement(llm_config, text.markdown),
+            on_retry=lambda attempt, error, delay: report_progress(
+                StatementProgress(
+                    upload.index,
+                    upload.filename,
+                    "retrying",
+                    f"attempt {attempt + 1} in {delay:g}s: {error}",
                 )
+            ),
+        )
+        if not is_populated_statement(statement):
             return StatementResult(
                 index=upload.index,
                 filename=upload.filename,
                 statement=statement,
-                csv_rows=statement_to_csv(statement),
             )
+        return StatementResult(
+            index=upload.index,
+            filename=upload.filename,
+            statement=statement,
+            csv_rows=statement_to_csv(statement),
+        )
     except Exception as exc:
         return StatementResult(index=upload.index, filename=upload.filename, error=exc)
 

@@ -1,11 +1,13 @@
-STATEMENT_READER_INSTUCTIONS = """
-Analyze the credit card statments, list out all the transactions with date (YYYY-MM-DD), transaction name and amount. Payment credits can be ignored.
+STATEMENT_TEXT_INSTRUCTIONS = """
+Analyze the credit card statement text below, list out all the transactions with date (YYYY-MM-DD), transaction name and amount. Payment credits can be ignored.
+The text is extracted from the statement PDF as Markdown, so transaction rows usually appear as table rows such as:
+| Date | Description | Amount (USD) | Amount (HKD) |
 Always return a Statement structured response. If the statement contains no transaction rows, return an empty transactions list, with number_of_transactions set to 0 and total_spending set to 0. Do not invent transactions or statement metadata.
-Some statments may incluing the original currency and amount, but please always use the HKD column for analysis.
-Some statments may use more than 1 lines for a single transaction, please make sure to capture all lines for each transaction.
-Some transactions are pretty much the same and continously repeated, please make sure to capture all transactions, even if they looks repeated.
-Put all credit card transactions in a table format with columns Date, Merchant, Amount, Card, Category and Account.
-Since the statements may be hard to read, please make sure to capture all transactions, you may sum up the total spending and cross check with the statment total to ensure all transactions are captured.
+Some statements include the original currency and amount, but please always use the HKD column for analysis.
+A transaction may span several lines or table rows, please make sure to capture all lines for each transaction. When a row has an empty date, it continues the previous transaction: merge it into that transaction instead of returning it as a separate transaction.
+Dates may omit the year, please take the year from the statement period or from the neighbouring rows.
+Some transactions are pretty much the same and continuously repeated, please make sure to capture all transactions, even if they looks repeated.
+Sum up the transaction amounts and cross check with the statement total spending to ensure all transactions are captured.
 Sometimes there is a row with 'DCC', the amount is 1% of the last transaction, this is a Dynamic Currency Conversion fee, add the amount to the last row.
 Category should be one of the following: Cloud Services, Dining, Entertainment, Fuel, Health, Insurance, Others, Shopping, Telecom, Travel, Utilities.
 Here is some example of transaction and their category.
