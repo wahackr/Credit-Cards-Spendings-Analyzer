@@ -1,11 +1,12 @@
 # Credit Card Spending Analyzer
 
-An automated tool that converts credit card PDF statements into structured CSV data using Google Gemini or an OpenAI-compatible multimodal LLM. The application extracts transaction details including dates, merchant names, amounts, categories, and more from credit card statements.
+An automated tool that converts credit card PDF statements into structured CSV data by extracting their text and analyzing it with Google Gemini or an OpenAI-compatible LLM. The application extracts transaction details including dates, merchant names, amounts, categories, and more from credit card statements.
 
 ## Features
 
-- 📄 **PDF to Image Conversion**: Automatically converts PDF statements to images for processing
-- 🤖 **Choice of LLM**: Uses Google Gemini or a self-hosted OpenAI-compatible multimodal model
+- 📄 **PDF Text Extraction**: Converts statement PDFs to Markdown text with table columns rebuilt from word coordinates
+- 🤖 **Choice of LLM**: Uses Google Gemini or a self-hosted OpenAI-compatible model
+- 🚫 **Scanned-PDF Guard**: A PDF with no usable text layer is rejected before any LLM call; OCR is not supported
 - 📊 **Structured Output**: Generates clean CSV files with categorized transactions
 - 🏷️ **Auto-Categorization**: Automatically categorizes transactions (Dining, Shopping, Travel, etc.)
 - 💼 **Account Separation**: Distinguishes between Personal and Business accounts
@@ -32,7 +33,7 @@ The analyzer automatically categorizes transactions into:
 ## Prerequisites
 
 - Python >= 3.12
-- A Google Gemini API key, or an OpenAI-compatible multimodal endpoint
+- A Google Gemini API key, or an OpenAI-compatible text-model endpoint
 - PDF credit card statements
 
 ## Installation
@@ -43,12 +44,7 @@ git clone <repository-url>
 cd Credit-Cards-Spendings-Analysiser
 ```
 
-2. Install system dependencies:
-```bash
-sudo apt-get install poppler-utils
-```
-
-3. Install Python dependencies using `uv`:
+2. Install Python dependencies using `uv`:
 ```bash
 uv sync
 ```
@@ -93,9 +89,9 @@ export OPENAI_THINKING=false
 ```
 
 `OPENAI_API_KEY` may be omitted because it defaults to `not-required`. If it is
-set, it must not be empty. The selected model and server must support image inputs
-and structured output/tool calling through an OpenAI-compatible Chat Completions
-API.
+set, it must not be empty. The selected model and server must support structured
+output/tool calling through an OpenAI-compatible Chat Completions API; the analyzer
+sends statement text, not page images.
 
 For local development you can keep these variables in an untracked `.env` file at
 the repository root instead of exporting them in your shell. It is loaded by both
@@ -133,15 +129,17 @@ chooses the initial selection. The configuration panel lists every provider whos
 required configuration is valid. The CLI has no provider selector, so it uses
 `LLM_PROVIDER` directly and defaults to Gemini when the variable is omitted.
 
-### Image handling
+### Text extraction
 
-PDF pages are rendered as lossless PNG images at 300 DPI by default. This is a
-balance between making small transaction digits legible and limiting image size,
-vision-token usage, and processing time.
+Statement PDFs are converted to Markdown with `markitdown`, which rebuilds table
+columns from word coordinates, so dates and amounts reach the model as exact
+characters instead of pixels. The conversion runs in memory (`io.BytesIO`), so no
+intermediate image or text files are produced, and no system PDF tools are needed:
+the readers (`pdfplumber`, `pdfminer-six`, `pypdfium2`) ship as wheels.
 
-Gemini statement pages are uploaded with the Gemini Files API to avoid the
-inline-media request-size limit. OpenAI-compatible endpoints receive Base64 image
-content because file-upload APIs are not part of the common Chat Completions API.
+A PDF that yields fewer than 120 characters is treated as having no usable text
+layer and fails before any LLM call — scanned or image-only statements need a text
+PDF export, since OCR is not supported.
 
 ## Docker Deployment
 
@@ -285,8 +283,8 @@ not through its OpenAI-compatible API. `OPENAI_MAX_OUTPUT_TOKENS` only caps the
 completion and does not increase the available context.
 
 3. The script will:
-   - Convert PDFs to images (saved in `statements/bank-name-YYYYMM/images/`)
-   - Process images through the configured LLM
+   - Extract Markdown text from each PDF (a scanned PDF fails with a clear message)
+   - Send that text to the configured LLM
    - Extract and categorize all transactions
    - Output consolidated CSV data
 
@@ -308,10 +306,11 @@ completion and does not increase the available context.
 │       ├── states/                # Data models
 │       │   └── statement.py
 │       └── tools/                 # Utility tools
-│           ├── pdf_2_image.py     # PDF conversion
+│           ├── pdf_2_text.py      # PDF to Markdown text extraction
 │           ├── state_2_csv.py     # CSV generation
 │           ├── statement_processor.py # Concurrent statement pipeline
-│           ├── statement_reader.py # Statement processing
+│           ├── statement_reader.py # LLM call and structured output
+│           ├── statement_results.py # Per-statement results and validation
 │           └── retry.py           # Transient error retry
 ├── statements/                    # Input PDF statements (CLI mode)
 ├── pyproject.toml                # Project dependencies
@@ -330,12 +329,12 @@ The analyzer generates CSV output with the following columns:
 
 ## Dependencies
 
-- `google-genai`: Google Gemini API client
+- `fastapi` and `uvicorn[standard]`: web app and server
 - `langchain`: LLM framework
 - `langchain-google-genai`: Gemini integration for LangChain
 - `langchain-openai`: OpenAI-compatible integration for LangChain
-- `pdf2image`: PDF to image conversion
-- `pillow`: Image processing
+- `markitdown[pdf]`: PDF to Markdown text extraction
+- `pandas`: CSV assembly
 
 ## Data Models
 
@@ -347,8 +346,8 @@ The application uses Pydantic models for structured data:
 ## How It Works
 
 1. **PDF Discovery**: Scans the `statements/` folder for PDF files
-2. **Image Conversion**: Converts each PDF page to PNG images
-3. **AI Analysis**: Sends images to the configured LLM with structured prompts
+2. **Text Extraction**: Converts each PDF to Markdown with table columns rebuilt from word coordinates
+3. **AI Analysis**: Sends the statement text to the configured LLM with structured prompts
 4. **Data Extraction**: AI extracts transactions with intelligent parsing
 5. **CSV Generation**: Converts structured data to CSV format
 6. **Validation**: Cross-checks totals to ensure accuracy
@@ -368,4 +367,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 - Google Gemini AI for powerful document understanding
 - LangChain for LLM orchestration
-- pdf2image for reliable PDF conversion
+- markitdown and pdfplumber for PDF text extraction
