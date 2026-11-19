@@ -27,7 +27,6 @@
   },
   "remoteEnv": {
     "OPENAI_API_KEY": "${localEnv:OPENAI_API_KEY}",
-    "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}",
     "PERPLEXITY_API_KEY": "${localEnv:PERPLEXITY_API_KEY}",
     "AWS_PROFILE": "${localEnv:AWS_PROFILE}"
   },

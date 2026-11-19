@@ -10,7 +10,7 @@ case "$stage" in validate|build|deploy) ;; *) echo 'Usage: deploy.sh validate|bu
 
 # GitHub accepts empty variables, so unfilled placeholders must fail before any image is built.
 for key in COMPOSE_PROJECT_NAME TZ APP_BIND_ADDRESS APP_HOST_PORT APP_MEM_LIMIT \
-  APP_ALLOW_LAN_BIND LLM_PROVIDER GEMINI_API_KEY GEMINI_MODEL OPENAI_BASE_URL OPENAI_MODEL \
+  APP_ALLOW_LAN_BIND LLM_PROVIDER OPENAI_BASE_URL OPENAI_MODEL \
   OPENAI_API_KEY OPENAI_THINKING OPENAI_MAX_OUTPUT_TOKENS MAX_CONCURRENT_STATEMENTS LLM_DEBUG; do
   if [[ "${!key:-}" == CHANGE_ME ]]; then
     echo "Replace the GitHub deployment placeholder: $key" >&2
@@ -34,10 +34,11 @@ fi
 # rather than as a readiness timeout after the image build.
 case "$LLM_PROVIDER" in
   gemini)
-    if [[ -z "${GEMINI_API_KEY:-}" ]]; then
-      echo "Missing GitHub deployment secret: GEMINI_API_KEY (required for LLM_PROVIDER=gemini)" >&2
-      exit 1
-    fi
+    # Fail with the reason rather than the generic message below, so a stale GitHub
+    # variable points at the fix instead of looking like a typo.
+    echo 'LLM_PROVIDER=gemini is no longer supported: the Gemini provider was removed.' >&2
+    echo 'Set LLM_PROVIDER=openai-compatible and provide OPENAI_BASE_URL and OPENAI_MODEL.' >&2
+    exit 1
     ;;
   openai-compatible)
     for key in OPENAI_BASE_URL OPENAI_MODEL; do
@@ -52,7 +53,7 @@ case "$LLM_PROVIDER" in
     fi
     ;;
   *)
-    echo 'LLM_PROVIDER must be gemini or openai-compatible' >&2
+    echo 'LLM_PROVIDER must be openai-compatible' >&2
     exit 1
     ;;
 esac
