@@ -25,8 +25,9 @@ fi
     env: {
       PATH: `${bin}:${process.env.PATH}`,
       COMPOSE_PROJECT_NAME: 'context-test',
-      LLM_PROVIDER: 'gemini',
-      GEMINI_API_KEY: 'test-key',
+      LLM_PROVIDER: 'openai-compatible',
+      OPENAI_BASE_URL: 'http://stub.example:8080/v1',
+      OPENAI_MODEL: 'test-model',
       DOCKER_CONTEXT: context,
       DOCKER_HOST: 'tcp://inherited.example:2376',
       DOCKER_TLS: '1',

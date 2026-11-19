@@ -9,7 +9,7 @@ stage=${1:-}
 case "$stage" in validate|build|deploy) ;; *) echo 'Usage: deploy.sh validate|build|deploy' >&2; exit 1 ;; esac
 
 # GitHub accepts empty variables, so unfilled placeholders must fail before any image is built.
-for key in COMPOSE_PROJECT_NAME TZ APP_BIND_ADDRESS APP_HOST_PORT APP_MEM_LIMIT \
+for key in DOCKER_CONTEXT COMPOSE_PROJECT_NAME TZ APP_BIND_ADDRESS APP_HOST_PORT APP_MEM_LIMIT \
   APP_ALLOW_LAN_BIND LLM_PROVIDER OPENAI_BASE_URL OPENAI_MODEL \
   OPENAI_API_KEY OPENAI_THINKING OPENAI_MAX_OUTPUT_TOKENS MAX_CONCURRENT_STATEMENTS LLM_DEBUG; do
   if [[ "${!key:-}" == CHANGE_ME ]]; then
