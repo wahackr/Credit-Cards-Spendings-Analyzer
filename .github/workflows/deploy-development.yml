@@ -40,9 +40,7 @@ jobs:
       APP_HOST_PORT: ${{ vars.APP_HOST_PORT || '8010' }}
       APP_ALLOW_LAN_BIND: ${{ vars.APP_ALLOW_LAN_BIND || 'false' }}
       APP_MEM_LIMIT: ${{ vars.APP_MEM_LIMIT || '2g' }}
-      LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'gemini' }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3-flash-preview' }}
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'openai-compatible' }}
       OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'not-required' }}
       OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}

@@ -20,9 +20,7 @@ services:
     environment:
       # Every optional variable carries an empty default: unset names otherwise make Compose
       # print a "not set, defaulting to blank string" warning on each command.
-      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3-flash-preview}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai-compatible}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-not-required}
       - OPENAI_MODEL=${OPENAI_MODEL:-}

@@ -1,11 +1,12 @@
 # Credit Card Spending Analyzer
 
-An automated tool that converts credit card PDF statements into structured CSV data using Google Gemini or an OpenAI-compatible multimodal LLM. The application extracts transaction details including dates, merchant names, amounts, categories, and more from credit card statements.
+An automated tool that converts credit card PDF statements into structured CSV data by extracting their text and analyzing it with an OpenAI-compatible LLM. The application extracts transaction details including dates, merchant names, amounts, categories, and more from credit card statements.
 
 ## Features
 
-- 📄 **PDF to Image Conversion**: Automatically converts PDF statements to images for processing
-- 🤖 **Choice of LLM**: Uses Google Gemini or a self-hosted OpenAI-compatible multimodal model
+- 📄 **PDF Text Extraction**: Converts statement PDFs to Markdown text with table columns rebuilt from word coordinates
+- 🤖 **OpenAI-compatible LLM**: Works with any self-hosted or hosted model endpoint that speaks the OpenAI Chat Completions API
+- 🚫 **Scanned-PDF Guard**: A PDF with no usable text layer is rejected before any LLM call; OCR is not supported
 - 📊 **Structured Output**: Generates clean CSV files with categorized transactions
 - 🏷️ **Auto-Categorization**: Automatically categorizes transactions (Dining, Shopping, Travel, etc.)
 - 💼 **Account Separation**: Distinguishes between Personal and Business accounts
@@ -32,7 +33,7 @@ The analyzer automatically categorizes transactions into:
 ## Prerequisites
 
 - Python >= 3.12
-- A Google Gemini API key, or an OpenAI-compatible multimodal endpoint
+- An OpenAI-compatible text-model endpoint (self-hosted or hosted)
 - PDF credit card statements
 
 ## Installation
@@ -43,12 +44,7 @@ git clone <repository-url>
 cd Credit-Cards-Spendings-Analysiser
 ```
 
-2. Install system dependencies:
-```bash
-sudo apt-get install poppler-utils
-```
-
-3. Install Python dependencies using `uv`:
+2. Install Python dependencies using `uv`:
 ```bash
 uv sync
 ```
@@ -60,29 +56,20 @@ pip install .
 
 ## LLM configuration
 
-The analyzer supports `gemini` and `openai-compatible`. Provider availability is
-determined from the provider-specific environment variables below.
+`openai-compatible` is the only supported provider: the Gemini provider was removed once
+statements reach the model as extracted text instead of page images. Provider availability
+is determined from the environment variables below.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `LLM_PROVIDER` | CLI: yes when using OpenAI-compatible; web app: no | CLI provider selection and preferred web app default. Defaults to `gemini`. |
-| `GEMINI_API_KEY` | For Gemini | Google Gemini API key. Its presence enables Gemini in the web app. |
-| `GEMINI_MODEL` | No | Gemini model name. Defaults to `gemini-3-flash-preview`. |
-| `OPENAI_BASE_URL` | For OpenAI-compatible | API base URL, normally ending in `/v1`. |
-| `OPENAI_API_KEY` | For OpenAI-compatible | API key. Defaults to `not-required`; use a placeholder for unauthenticated local servers. |
-| `OPENAI_MODEL` | For OpenAI-compatible | Model name exposed by the server. Its presence, together with `OPENAI_BASE_URL`, enables this provider in the web app. |
+| `LLM_PROVIDER` | No | Only `openai-compatible` is accepted, and it is used when the variable is omitted. The removed `gemini` value fails with an explicit error. |
+| `OPENAI_BASE_URL` | Yes | API base URL, normally ending in `/v1`. |
+| `OPENAI_API_KEY` | No | API key. Defaults to `not-required`; use a placeholder for unauthenticated local servers. |
+| `OPENAI_MODEL` | Yes | Model name exposed by the server. Its presence, together with `OPENAI_BASE_URL`, enables the provider in the web app. |
 | `OPENAI_THINKING` | No | Sends the nonstandard `think` option. Set to `false` for thinking-capable Qwen models on Ollama. Omit it for servers that do not support this option. |
 | `OPENAI_MAX_OUTPUT_TOKENS` | No | Positive integer limiting completion length. Omit it to use the server default. |
 
-### Gemini only
-
-```bash
-export LLM_PROVIDER=gemini
-export GEMINI_API_KEY=your-api-key
-export GEMINI_MODEL=gemini-3-flash-preview  # optional; this is the default
-```
-
-### OpenAI-compatible only
+### Example
 
 ```bash
 export LLM_PROVIDER=openai-compatible
@@ -93,9 +80,9 @@ export OPENAI_THINKING=false
 ```
 
 `OPENAI_API_KEY` may be omitted because it defaults to `not-required`. If it is
-set, it must not be empty. The selected model and server must support image inputs
-and structured output/tool calling through an OpenAI-compatible Chat Completions
-API.
+set, it must not be empty. The selected model and server must support structured
+output/tool calling through an OpenAI-compatible Chat Completions API; the analyzer
+sends statement text, not page images.
 
 For local development you can keep these variables in an untracked `.env` file at
 the repository root instead of exporting them in your shell. It is loaded by both
@@ -110,38 +97,25 @@ can consume the model's entire context window before it finishes the required
 JSON response. Set `OPENAI_THINKING=false` for statement extraction. This option
 is Ollama-specific and is only sent when the environment variable is set.
 
-### Configure both providers
+### One provider, several servers
 
-Set both groups of provider variables when you want to switch providers in the
-web app's configuration panel:
+`LLM_PROVIDER` takes no value other than `openai-compatible`, so it can simply be omitted;
+the CLI uses that provider directly. The web app lists a provider only when its required
+variables are valid, so a missing `OPENAI_BASE_URL` or `OPENAI_MODEL` leaves the
+configuration panel empty. To analyze a job against a different server, edit the endpoint
+field in that panel for the job instead of configuring another provider.
 
-```bash
-export GEMINI_API_KEY=your-gemini-api-key
-export GEMINI_MODEL=gemini-3-flash-preview
+### Text extraction
 
-export OPENAI_BASE_URL=http://10.7.7.79:8080/v1
-export OPENAI_API_KEY=not-required
-export OPENAI_MODEL=qwen3.5:9b
-export OPENAI_THINKING=false
+Statement PDFs are converted to Markdown with `markitdown`, which rebuilds table
+columns from word coordinates, so dates and amounts reach the model as exact
+characters instead of pixels. The conversion runs in memory (`io.BytesIO`), so no
+intermediate image or text files are produced, and no system PDF tools are needed:
+the readers (`pdfplumber`, `pdfminer-six`, `pypdfium2`) ship as wheels.
 
-# CLI selection and initial web app selection:
-export LLM_PROVIDER=openai-compatible
-```
-
-`LLM_PROVIDER` does not hide the other configured provider in the web app. It only
-chooses the initial selection. The configuration panel lists every provider whose
-required configuration is valid. The CLI has no provider selector, so it uses
-`LLM_PROVIDER` directly and defaults to Gemini when the variable is omitted.
-
-### Image handling
-
-PDF pages are rendered as lossless PNG images at 300 DPI by default. This is a
-balance between making small transaction digits legible and limiting image size,
-vision-token usage, and processing time.
-
-Gemini statement pages are uploaded with the Gemini Files API to avoid the
-inline-media request-size limit. OpenAI-compatible endpoints receive Base64 image
-content because file-upload APIs are not part of the common Chat Completions API.
+A PDF that yields fewer than 120 characters is treated as having no usable text
+layer and fails before any LLM call — scanned or image-only statements need a text
+PDF export, since OCR is not supported.
 
 ## Docker Deployment
 
@@ -154,25 +128,15 @@ docker build -f deploy/docker/analyzer.Dockerfile -t credit-card-analyzer .
 
 2. **Run the container:**
 
-Gemini:
+`LLM_PROVIDER` may be omitted because `openai-compatible` is the default:
 
 ```bash
 docker run -p 8000:8000 \
-  -e LLM_PROVIDER="gemini" \
-  -e GEMINI_API_KEY="your-api-key-here" \
-  -e MAX_CONCURRENT_STATEMENTS=2 \
-  credit-card-analyzer
-```
-
-OpenAI-compatible:
-
-```bash
-docker run -p 8000:8000 \
-  -e LLM_PROVIDER="openai-compatible" \
   -e OPENAI_BASE_URL="http://10.7.7.79:8080/v1" \
   -e OPENAI_API_KEY="not-required" \
   -e OPENAI_MODEL="qwen3.5:9b" \
   -e OPENAI_THINKING="false" \
+  -e MAX_CONCURRENT_STATEMENTS=2 \
   credit-card-analyzer
 ```
 
@@ -188,7 +152,7 @@ Open your browser to `http://localhost:8000`
 The repository tracks `deploy/compose.yaml`; use it instead of writing your own:
 
 ```bash
-cp deploy/.env.example deploy/.env   # then put a real key in it
+cp deploy/.env.example deploy/.env   # then put your endpoint and model in it
 docker compose --env-file deploy/.env -f deploy/compose.yaml up --build -d
 ```
 
@@ -249,10 +213,8 @@ rejected.
 
 Web app provider behavior:
 
-- Only `GEMINI_API_KEY` set: only Gemini is listed.
-- Only `OPENAI_BASE_URL` and `OPENAI_MODEL` set: only OpenAI-compatible is listed.
-- Both configurations set: both are listed, and `LLM_PROVIDER` chooses the initial selection.
-- Neither configured: the app displays the missing provider settings and blocks uploads.
+- `OPENAI_BASE_URL` and `OPENAI_MODEL` set: OpenAI-compatible is listed and preselected.
+- Either one missing: the app displays the missing provider settings and blocks uploads.
 
 ### API overview
 
@@ -286,8 +248,8 @@ not through its OpenAI-compatible API. `OPENAI_MAX_OUTPUT_TOKENS` only caps the
 completion and does not increase the available context.
 
 3. The script will:
-   - Convert PDFs to images (saved in `statements/bank-name-YYYYMM/images/`)
-   - Process images through the configured LLM
+   - Extract Markdown text from each PDF (a scanned PDF fails with a clear message)
+   - Send that text to the configured LLM
    - Extract and categorize all transactions
    - Output consolidated CSV data
 
@@ -309,10 +271,11 @@ completion and does not increase the available context.
 │       ├── states/                # Data models
 │       │   └── statement.py
 │       └── tools/                 # Utility tools
-│           ├── pdf_2_image.py     # PDF conversion
+│           ├── pdf_2_text.py      # PDF to Markdown text extraction
 │           ├── state_2_csv.py     # CSV generation
 │           ├── statement_processor.py # Concurrent statement pipeline
-│           ├── statement_reader.py # Statement processing
+│           ├── statement_reader.py # LLM call and structured output
+│           ├── statement_results.py # Per-statement results and validation
 │           └── retry.py           # Transient error retry
 ├── statements/                    # Input PDF statements (CLI mode)
 ├── pyproject.toml                # Project dependencies
@@ -331,12 +294,11 @@ The analyzer generates CSV output with the following columns:
 
 ## Dependencies
 
-- `google-genai`: Google Gemini API client
+- `fastapi` and `uvicorn[standard]`: web app and server
 - `langchain`: LLM framework
-- `langchain-google-genai`: Gemini integration for LangChain
 - `langchain-openai`: OpenAI-compatible integration for LangChain
-- `pdf2image`: PDF to image conversion
-- `pillow`: Image processing
+- `markitdown[pdf]`: PDF to Markdown text extraction
+- `pandas`: CSV assembly
 
 ## Data Models
 
@@ -348,8 +310,8 @@ The application uses Pydantic models for structured data:
 ## How It Works
 
 1. **PDF Discovery**: Scans the `statements/` folder for PDF files
-2. **Image Conversion**: Converts each PDF page to PNG images
-3. **AI Analysis**: Sends images to the configured LLM with structured prompts
+2. **Text Extraction**: Converts each PDF to Markdown with table columns rebuilt from word coordinates
+3. **AI Analysis**: Sends the statement text to the configured LLM with structured prompts
 4. **Data Extraction**: AI extracts transactions with intelligent parsing
 5. **CSV Generation**: Converts structured data to CSV format
 6. **Validation**: Cross-checks totals to ensure accuracy
@@ -367,6 +329,5 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Acknowledgments
 
-- Google Gemini AI for powerful document understanding
 - LangChain for LLM orchestration
-- pdf2image for reliable PDF conversion
+- markitdown and pdfplumber for PDF text extraction
