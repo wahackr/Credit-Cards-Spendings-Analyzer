@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and roll out the analyzer Compose stack on the machine hosting the runner.
+# Build and roll out the analyzer Compose stack using the configured Docker context.
 # Configuration comes only from GitHub environment variables and secrets; local
 # .env files are ignored so a persistent runner can never deploy a stale one.
 set -euo pipefail
@@ -84,17 +84,19 @@ for key in MAX_CONCURRENT_STATEMENTS OPENAI_MAX_OUTPUT_TOKENS; do
   fi
 done
 
-# Use the runner's local Docker socket; ignore inherited remote connection settings.
+# Select the same context for validation, build, rollout, and diagnostics.
 # Never use an untracked .env or an inherited profile on a persistent runner.
 export COMPOSE_PROFILES=''
-unset DOCKER_CONTEXT DOCKER_TLS_VERIFY DOCKER_CERT_PATH
-export DOCKER_HOST=unix:///var/run/docker.sock
-compose=(docker compose --env-file /dev/null -f deploy/compose.yaml)
+unset DOCKER_HOST DOCKER_TLS DOCKER_TLS_VERIFY DOCKER_CERT_PATH
+docker_context=${DOCKER_CONTEXT:-default}
+docker_cli=(docker --context "$docker_context")
+compose=("${docker_cli[@]}" compose --env-file /dev/null -f deploy/compose.yaml)
 
 case "$stage" in
   validate)
-    docker info >/dev/null
-    docker compose version
+    printf 'Validating Docker context %s\n' "$docker_context"
+    "${docker_cli[@]}" info >/dev/null
+    "${docker_cli[@]}" compose version
     "${compose[@]}" config --quiet
     ;;
   build)

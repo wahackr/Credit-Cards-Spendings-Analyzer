@@ -1,0 +1,91 @@
+name: Deploy Analyzer to prod (Docker Compose)
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - src/**
+      - tests/**
+      - deploy/**
+      - pyproject.toml
+      - uv.lock
+      - .python-version
+      - .dockerignore
+      - .github/workflows/deploy-production.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Prod rollouts queue rather than cancel: a half-finished deploy must not be replaced
+# mid-flight, and one runner serialises them anyway.
+concurrency:
+  group: credit-card-analyzer-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/master'
+    environment: prod
+    runs-on: self-hosted
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Fixed in code, not a mutable GitHub variable: a deploy target should not be
+      # something the dashboard can retarget. The runner's account must have this context.
+      DOCKER_CONTEXT: prod
+      COMPOSE_PROJECT_NAME: ${{ vars.COMPOSE_PROJECT_NAME || 'credit-card-analyzer-prod' }}
+      TZ: ${{ vars.TZ || 'Asia/Hong_Kong' }}
+      # Prod is published on all interfaces by choice, so the LAN-bind guard is
+      # pre-approved here; the app still has no authentication (see deploy/README.md).
+      APP_BIND_ADDRESS: ${{ vars.APP_BIND_ADDRESS || '0.0.0.0' }}
+      APP_ALLOW_LAN_BIND: ${{ vars.APP_ALLOW_LAN_BIND || 'true' }}
+      APP_HOST_PORT: ${{ vars.APP_HOST_PORT || '8000' }}
+      APP_MEM_LIMIT: ${{ vars.APP_MEM_LIMIT || '2g' }}
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'gemini' }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3-flash-preview' }}
+      OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'not-required' }}
+      OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+      OPENAI_THINKING: ${{ vars.OPENAI_THINKING }}
+      OPENAI_MAX_OUTPUT_TOKENS: ${{ vars.OPENAI_MAX_OUTPUT_TOKENS }}
+      MAX_CONCURRENT_STATEMENTS: ${{ vars.MAX_CONCURRENT_STATEMENTS || '2' }}
+      LLM_DEBUG: ${{ vars.LLM_DEBUG || 'false' }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Skip superseded commits
+        id: current
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const isCurrent = require('./deploy/tools/deployment-current.cjs');
+            core.setOutput('deploy', String(await isCurrent({ github, context, branch: 'master' })));
+
+      - name: Validate deployment configuration
+        if: steps.current.outputs.deploy == 'true'
+        run: bash deploy/tools/deploy.sh validate
+
+      - name: Build application image
+        if: steps.current.outputs.deploy == 'true'
+        run: bash deploy/tools/deploy.sh build
+
+      - name: Recheck branch before deployment
+        id: ready
+        if: steps.current.outputs.deploy == 'true'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const isCurrent = require('./deploy/tools/deployment-current.cjs');
+            core.setOutput('deploy', String(await isCurrent({ github, context, branch: 'master' })));
+
+      - name: Deploy and check readiness
+        if: steps.ready.outputs.deploy == 'true'
+        run: bash deploy/tools/deploy.sh deploy
