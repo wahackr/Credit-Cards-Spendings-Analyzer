@@ -1,0 +1,84 @@
+name: Deploy Analyzer to dev (Docker Compose)
+
+on:
+  push:
+    branches: [development]
+    paths:
+      - src/**
+      - tests/**
+      - deploy/**
+      - pyproject.toml
+      - uv.lock
+      - .python-version
+      - .dockerignore
+      - .github/workflows/deploy-development.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: credit-card-analyzer-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/development'
+    environment: dev
+    runs-on: self-hosted
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      COMPOSE_PROJECT_NAME: ${{ vars.COMPOSE_PROJECT_NAME || 'credit-card-analyzer-dev' }}
+      TZ: ${{ vars.TZ || 'Asia/Hong_Kong' }}
+      APP_BIND_ADDRESS: ${{ vars.APP_BIND_ADDRESS || '127.0.0.1' }}
+      APP_HOST_PORT: ${{ vars.APP_HOST_PORT || '8010' }}
+      APP_ALLOW_LAN_BIND: ${{ vars.APP_ALLOW_LAN_BIND || 'false' }}
+      APP_MEM_LIMIT: ${{ vars.APP_MEM_LIMIT || '2g' }}
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'gemini' }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3-flash-preview' }}
+      OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'not-required' }}
+      OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+      OPENAI_THINKING: ${{ vars.OPENAI_THINKING }}
+      OPENAI_MAX_OUTPUT_TOKENS: ${{ vars.OPENAI_MAX_OUTPUT_TOKENS }}
+      MAX_CONCURRENT_STATEMENTS: ${{ vars.MAX_CONCURRENT_STATEMENTS || '2' }}
+      LLM_DEBUG: ${{ vars.LLM_DEBUG || 'false' }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Skip superseded commits
+        id: current
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const isCurrent = require('./deploy/tools/deployment-current.cjs');
+            core.setOutput('deploy', String(await isCurrent({ github, context })));
+
+      - name: Validate deployment configuration
+        if: steps.current.outputs.deploy == 'true'
+        run: bash deploy/tools/deploy.sh validate
+
+      - name: Build application image
+        if: steps.current.outputs.deploy == 'true'
+        run: bash deploy/tools/deploy.sh build
+
+      - name: Recheck branch before deployment
+        id: ready
+        if: steps.current.outputs.deploy == 'true'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const isCurrent = require('./deploy/tools/deployment-current.cjs');
+            core.setOutput('deploy', String(await isCurrent({ github, context })));
+
+      - name: Deploy and check readiness
+        if: steps.ready.outputs.deploy == 'true'
+        run: bash deploy/tools/deploy.sh deploy
