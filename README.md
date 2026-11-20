@@ -68,6 +68,7 @@ is determined from the environment variables below.
 | `OPENAI_MODEL` | Yes | Model name exposed by the server. Its presence, together with `OPENAI_BASE_URL`, enables the provider in the web app. |
 | `OPENAI_THINKING` | No | Sends the nonstandard `think` option. Set to `false` for thinking-capable Qwen models on Ollama. Omit it for servers that do not support this option. |
 | `OPENAI_MAX_OUTPUT_TOKENS` | No | Positive integer limiting completion length. Omit it to use the server default. |
+| `LLM_DEBUG` | No | Set truthy to dump every statement's full text and the parsed LLM response to stderr. Off by default because both contain raw card data. |
 
 ### Example
 
@@ -211,6 +212,16 @@ different files that share the same name — are combined into a single report.
 The relative path is kept as the statement label, and absolute or `..` paths are
 rejected.
 
+### Running the tests
+
+The `tests/` directory holds a pytest suite (configured in `pyproject.toml`, which
+puts `src` and `tests` on the import path). Run it with:
+
+```bash
+uv run pytest -q -ra
+uv run flake8 src tests   # lint, matching CI
+```
+
 Web app provider behavior:
 
 - `OPENAI_BASE_URL` and `OPENAI_MODEL` set: OpenAI-compatible is listed and preselected.
@@ -220,6 +231,7 @@ Web app provider behavior:
 
 | Endpoint | Purpose |
 | --- | --- |
+| `GET /api/config` | Providers valid in the environment, their defaults (model, endpoint, thinking), and the worker bound. |
 | `POST /api/jobs` | `multipart/form-data` upload of PDFs (`files` field, up to 20; filenames may keep relative sub-paths from folder uploads); optional `provider`/`model`/`base_url` query params. `base_url` overrides the OpenAI-compatible endpoint for this job. Returns the job. |
 | `GET /api/jobs` / `GET /api/jobs/{id}` | List jobs or fetch one with per-file stages. |
 | `GET /api/jobs/{id}/events` | Server-Sent Events stream of progress until the job finishes. |
@@ -277,10 +289,19 @@ completion and does not increase the available context.
 │           ├── statement_reader.py # LLM call and structured output
 │           ├── statement_results.py # Per-statement results and validation
 │           └── retry.py           # Transient error retry
+├── tests/                         # pytest suite (pdf_fixture.py builds a sample PDF)
+├── deploy/                        # Docker Compose, image, and CI deploy tooling
+│   ├── compose.yaml               # Compose stack (loopback bind, mem ceiling)
+│   ├── docker/analyzer.Dockerfile # Runtime image
+│   └── tools/                     # deploy.sh + Node scripts tested by CI
+├── .github/workflows/             # test.yml, deploy-development.yml, deploy-production.yml
 ├── statements/                    # Input PDF statements (CLI mode)
-├── pyproject.toml                # Project dependencies
+├── pyproject.toml                 # Project dependencies
 └── README.md
 ```
+
+Note: the root-level `main.py` is the `uv` scaffold stub, not the analyzer — the CLI
+entry point is `src/main.py`.
 
 ## Output Format
 
@@ -295,10 +316,12 @@ The analyzer generates CSV output with the following columns:
 ## Dependencies
 
 - `fastapi` and `uvicorn[standard]`: web app and server
+- `python-multipart`: parses the `multipart/form-data` statement uploads
 - `langchain`: LLM framework
 - `langchain-openai`: OpenAI-compatible integration for LangChain
 - `markitdown[pdf]`: PDF to Markdown text extraction
 - `pandas`: CSV assembly
+- `python-dotenv`: loads the repo-root `.env` defaults for the CLI and web app
 
 ## Data Models
 
