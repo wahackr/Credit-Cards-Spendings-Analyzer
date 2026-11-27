@@ -45,5 +45,49 @@ class LLMConfigTest(unittest.TestCase):
                     )
 
 
+class ListModelsTest(unittest.TestCase):
+    def setUp(self):
+        from libs.llm import main as llm_main
+
+        self.llm_main = llm_main
+
+    def test_returns_sorted_unique_model_ids(self):
+        client = Mock()
+        client.models.list.return_value = Mock(
+            data=[Mock(id="gpt-b"), Mock(id="gpt-a"), Mock(id="gpt-a")]
+        )
+        with patch.dict(
+            os.environ,
+            {"OPENAI_BASE_URL": "http://gw:8080/v1", "OPENAI_API_KEY": "k"},
+            clear=True,
+        ):
+            with patch.object(self.llm_main, "OpenAI", return_value=client):
+                models, error = self.llm_main.list_available_models()
+        self.assertIsNone(error)
+        self.assertEqual(models, ["gpt-a", "gpt-b"])
+
+    def test_missing_base_url_reports_error_without_calling_client(self):
+        client = Mock()
+        with patch.dict(os.environ, {}, clear=True):
+            with patch.object(self.llm_main, "OpenAI", return_value=client) as ctor:
+                models, error = self.llm_main.list_available_models()
+        self.assertEqual(models, [])
+        self.assertIsNotNone(error)
+        ctor.assert_not_called()
+
+    def test_endpoint_failure_is_returned_as_error(self):
+        client = Mock()
+        client.models.list.side_effect = RuntimeError("connection refused")
+        with patch.dict(
+            os.environ,
+            {"OPENAI_BASE_URL": "http://gw:8080/v1", "OPENAI_API_KEY": "k"},
+            clear=True,
+        ):
+            with patch.object(self.llm_main, "OpenAI", return_value=client):
+                models, error = self.llm_main.list_available_models()
+        self.assertEqual(models, [])
+        self.assertIn("connection refused", error)
+
+
 if __name__ == "__main__":
     unittest.main()

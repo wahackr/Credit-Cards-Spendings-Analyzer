@@ -85,12 +85,10 @@ class JobManager:
     def create_job(
         self,
         files: list[tuple[str, bytes]],
-        provider: str | None = None,
         model: str | None = None,
-        base_url: str | None = None,
     ) -> Job:
         """Validate configuration and queue a job; raises ValueError on bad config."""
-        llm_config = load_llm_config(provider=provider, model=model, base_url=base_url)
+        llm_config = load_llm_config(model=model)
         job = Job(
             id=uuid.uuid4().hex,
             provider=llm_config.provider,

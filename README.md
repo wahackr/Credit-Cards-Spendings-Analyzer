@@ -98,13 +98,15 @@ can consume the model's entire context window before it finishes the required
 JSON response. Set `OPENAI_THINKING=false` for statement extraction. This option
 is Ollama-specific and is only sent when the environment variable is set.
 
-### One provider, several servers
+### One provider, one server
 
 `LLM_PROVIDER` takes no value other than `openai-compatible`, so it can simply be omitted;
-the CLI uses that provider directly. The web app lists a provider only when its required
-variables are valid, so a missing `OPENAI_BASE_URL` or `OPENAI_MODEL` leaves the
-configuration panel empty. To analyze a job against a different server, edit the endpoint
-field in that panel for the job instead of configuring another provider.
+the CLI uses that provider directly. The web app reads its endpoint and API key from the
+environment only — there is no provider dropdown and no endpoint field, because the server
+holds the API key and always sends it to `OPENAI_BASE_URL`. To point the app at a different
+server, change `OPENAI_BASE_URL` and restart it. The web app starts only when
+`OPENAI_BASE_URL` and `OPENAI_MODEL` are valid; otherwise the configuration panel reports
+the missing settings and blocks uploads.
 
 ### Text extraction
 
@@ -187,7 +189,7 @@ statements/
 uv run python src/main.py
 ```
 
-Or start the web application, then select the provider and model in the
+Or start the web application, then pick the model to analyze with in the
 configuration panel:
 
 ```bash
@@ -199,10 +201,10 @@ progress over Server-Sent Events, the server keeps processing statements even if
 you close the tab, and finished jobs stay available for results and CSV download
 until the server restarts.
 
-For OpenAI-compatible providers, the configuration panel includes an editable
-endpoint field prefilled from `OPENAI_BASE_URL`. Change it before starting an
-analysis to use a different server for that job. This does not change the server's
-environment or the endpoint used by other jobs.
+The configuration panel lists the models served by `OPENAI_BASE_URL` (fetched by the
+server, which holds the API key, so the browser never sees it) and preselects
+`OPENAI_MODEL`. Pick one to run the job against it. If the endpoint does not expose a
+model list, only the configured default is offered, with a note explaining why.
 
 Statement staging accepts several sources in one job: drop files or whole folders,
 click to browse files, or use **Add Folder** to include a directory tree. Files
@@ -222,17 +224,19 @@ uv run pytest -q -ra
 uv run flake8 src tests   # lint, matching CI
 ```
 
-Web app provider behavior:
+Web app startup behavior:
 
-- `OPENAI_BASE_URL` and `OPENAI_MODEL` set: OpenAI-compatible is listed and preselected.
-- Either one missing: the app displays the missing provider settings and blocks uploads.
+- `OPENAI_BASE_URL` and `OPENAI_MODEL` set: the model picker is populated and the
+  configured default is preselected.
+- Either one missing: the app displays the missing settings and blocks uploads.
 
 ### API overview
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /api/config` | Providers valid in the environment, their defaults (model, endpoint, thinking), and the worker bound. |
-| `POST /api/jobs` | `multipart/form-data` upload of PDFs (`files` field, up to 20; filenames may keep relative sub-paths from folder uploads); optional `provider`/`model`/`base_url` query params. `base_url` overrides the OpenAI-compatible endpoint for this job. Returns the job. |
+| `GET /api/config` | Whether the environment is valid, the configured default model, and the worker bound. |
+| `GET /api/models` | Models served by the endpoint, proxied server-side so the API key stays hidden, plus the configured default. |
+| `POST /api/jobs` | `multipart/form-data` upload of PDFs (`files` field, up to 20; filenames may keep relative sub-paths from folder uploads); optional `model` query param selects the model for this job (defaults to `OPENAI_MODEL`; the endpoint always comes from the environment). Returns the job. |
 | `GET /api/jobs` / `GET /api/jobs/{id}` | List jobs or fetch one with per-file stages. |
 | `GET /api/jobs/{id}/events` | Server-Sent Events stream of progress until the job finishes. |
 | `POST /api/jobs/{id}/cancel` | Stop queued files and let running ones drain. |
@@ -319,6 +323,7 @@ The analyzer generates CSV output with the following columns:
 - `python-multipart`: parses the `multipart/form-data` statement uploads
 - `langchain`: LLM framework
 - `langchain-openai`: OpenAI-compatible integration for LangChain
+- `openai`: querying the endpoint's model list for the web app's model picker
 - `markitdown[pdf]`: PDF to Markdown text extraction
 - `pandas`: CSV assembly
 - `python-dotenv`: loads the repo-root `.env` defaults for the CLI and web app
