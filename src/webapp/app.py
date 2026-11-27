@@ -11,8 +11,8 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from libs.llm.main import (
-    SUPPORTED_PROVIDERS,
     configured_providers,
+    list_available_models,
     load_llm_config,
 )
 from webapp.jobs import JobManager
@@ -29,34 +29,36 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+def _default_model() -> str:
+    """Configured OPENAI_MODEL, or "" when the environment is incomplete."""
+    try:
+        return load_llm_config().model
+    except ValueError:
+        return ""
+
+
 @app.get("/api/config")
 def config() -> dict:
     available, errors = configured_providers()
-    defaults = {}
-    for provider in SUPPORTED_PROVIDERS:
-        try:
-            cfg = load_llm_config(provider=provider)
-        except ValueError:
-            continue
-        defaults[provider] = {
-            "model": cfg.model,
-            "base_url": cfg.base_url,
-            "thinking": cfg.thinking,
-        }
     return {
-        "providers": available,
+        "configured": bool(available),
         "errors": errors,
-        "defaults": defaults,
+        "defaultModel": _default_model(),
         "max_workers": manager.max_workers,
     }
+
+
+@app.get("/api/models")
+def models() -> dict:
+    """Model list proxied from the endpoint so the browser never sees the API key."""
+    available, error = list_available_models()
+    return {"models": available, "default": _default_model(), "error": error}
 
 
 @app.post("/api/jobs")
 async def create_job(
     request: Request,
-    provider: str | None = None,
     model: str | None = None,
-    base_url: str | None = None,
 ) -> dict:
     content_type = request.headers.get("content-type", "")
     if "multipart/form-data" not in content_type:
@@ -83,7 +85,7 @@ async def create_job(
         payloads.append((name, data))
 
     try:
-        job = manager.create_job(payloads, provider=provider, model=model, base_url=base_url)
+        job = manager.create_job(payloads, model=model)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return manager.describe(job)
