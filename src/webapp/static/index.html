@@ -145,15 +145,9 @@ try {
       <section class="panel">
         <h2>⚙️ Configuration</h2>
         <div id="config-error" class="err" hidden></div>
-        <label for="provider">LLM provider</label>
-        <select id="provider"></select>
         <label for="model">Model</label>
-        <input type="text" id="model" />
-        <div id="base-url-field" hidden>
-          <label for="base-url">OpenAI-compatible endpoint</label>
-          <input type="text" id="base-url" placeholder="http://localhost:8080/v1" />
-          <div class="hint">API base URL, including /v1. Used for new analysis jobs.</div>
-        </div>
+        <select id="model"></select>
+        <div class="hint" id="model-hint"></div>
         <div class="hint" id="endpoint"></div>
       </section>
 
@@ -236,38 +230,56 @@ let source = null;           // EventSource
 let transactions = [];
 
 // ----------------------------------------------------------- configuration ---
+let configured = false;
+
 async function loadConfig() {
   const res = await fetch("/api/config");
   const cfg = await res.json();
-  const sel = $("provider");
-  sel.innerHTML = "";
-  cfg.providers.forEach((p) => {
-    const opt = document.createElement("option");
-    opt.value = p;
-    opt.textContent = p;
-    sel.appendChild(opt);
-  });
+  configured = !!cfg.configured;
   const err = $("config-error");
-  if (!cfg.providers.length) {
+  if (!configured) {
     err.hidden = false;
     err.textContent = "No LLM provider configured. " + JSON.stringify(cfg.errors);
     $("start").disabled = true;
   }
-  applyDefaults(cfg);
-  sel.onchange = () => applyDefaults(cfg);
   $("endpoint").textContent = cfg.max_workers === 1
     ? "Concurrency: 1 statement at a time."
     : `Concurrency: ${cfg.max_workers} statements at a time.`;
+  await loadModels(cfg.defaultModel || "");
 }
 
-function applyDefaults(cfg) {
-  const provider = $("provider").value;
-  const def = cfg.defaults[provider] || {};
-  $("model").value = def.model || "";
-  $("base-url-field").hidden = provider !== "openai-compatible";
-  $("base-url").value = def.base_url || "";
-  $("endpoint").textContent =
-    (cfg.max_workers === 1 ? "Concurrency: 1 statement at a time." : `Concurrency: ${cfg.max_workers} statements.`);
+async function loadModels(defaultModel) {
+  const sel = $("model");
+  const hint = $("model-hint");
+  sel.innerHTML = "";
+  let models = [];
+  let error = null;
+  try {
+    const res = await fetch("/api/models");
+    const data = await res.json();
+    models = data.models || [];
+    error = data.error || null;
+    if (data.default) defaultModel = data.default;
+  } catch (e) {
+    error = String(e);
+  }
+  // Always offer the configured default model, even if the endpoint omits it.
+  const options = [...new Set([defaultModel, ...models].filter(Boolean))];
+  options.forEach((m) => {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = m;
+    sel.appendChild(opt);
+  });
+  if (defaultModel) sel.value = defaultModel;
+  if (error) {
+    hint.textContent = "Could not list models from the endpoint: " + error;
+  } else if (options.length > 1) {
+    hint.textContent = `${options.length} models available from the endpoint.`;
+  } else {
+    hint.textContent = "";
+  }
+  renderFileList();
 }
 
 // ---------------------------------------------------------------- uploads ---
@@ -376,7 +388,7 @@ function renderFileList() {
     };
     list.appendChild(li);
   });
-  $("start").disabled = selected.length === 0 || !$("provider").value;
+  $("start").disabled = selected.length === 0 || !configured;
 }
 
 function escapeHtml(s) {
@@ -388,20 +400,7 @@ async function startJob() {
   const form = new FormData();
   selected.forEach((f) => form.append("files", f, relPath(f)));
   const params = new URLSearchParams();
-  if ($("provider").value) params.set("provider", $("provider").value);
   if ($("model").value) params.set("model", $("model").value);
-  if ($("provider").value === "openai-compatible") {
-    const endpoint = $("base-url").value.trim();
-    try {
-      const url = new URL(endpoint);
-      if (!["http:", "https:"].includes(url.protocol)) throw new Error();
-    } catch {
-      $("status").textContent = "Enter a valid http:// or https:// endpoint.";
-      $("base-url").focus();
-      return;
-    }
-    params.set("base_url", endpoint);
-  }
 
   $("start").disabled = true;
   $("log").hidden = false;
