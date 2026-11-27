@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+from openai import OpenAI
 
 # Repo-root .env supplies defaults; explicit environment variables take precedence.
 load_dotenv(Path(__file__).resolve().parents[3] / ".env", override=False)
@@ -121,6 +122,37 @@ def configured_providers(
         else:
             available.append(provider)
     return available, errors
+
+
+def list_available_models(
+    environ: Mapping[str, str] | None = None,
+    *,
+    timeout: float = 5.0,
+) -> tuple[list[str], str | None]:
+    """Query the OpenAI-compatible endpoint for the models it serves.
+
+    Reads OPENAI_BASE_URL / OPENAI_API_KEY directly (OPENAI_MODEL is not needed to
+    list models). The server holds the key, so the browser never sees it and no
+    cross-origin request is made from the client. Returns ``(model_ids, None)`` on
+    success or ``([], error_message)`` on any failure, so the web layer can fall
+    back to the configured default model instead of breaking the picker.
+    """
+    env = os.environ if environ is None else environ
+    base_url = env.get("OPENAI_BASE_URL", "").strip()
+    api_key = (env.get("OPENAI_API_KEY", "").strip() or "not-required")
+    if not base_url:
+        return [], "OPENAI_BASE_URL is not set; cannot list models."
+    try:
+        client = OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=timeout,
+            max_retries=0,
+        )
+        listing = client.models.list()
+    except Exception as error:  # network/auth/parse: never let the picker break the UI
+        return [], str(error)
+    return sorted({item.id for item in listing.data}), None
 
 
 def create_chat_model(config: LLMConfig):
